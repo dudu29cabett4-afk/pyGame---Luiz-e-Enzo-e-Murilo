@@ -1,6 +1,7 @@
 # # ===== Inicialização =====
 # # ----- Importa e inicia pacotes
 import pygame
+
 pygame.init()
 
 LARGURA = 800
