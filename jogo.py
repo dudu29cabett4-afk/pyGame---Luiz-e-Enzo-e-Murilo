@@ -8,13 +8,15 @@ LARGURA = 800
 ALTURA = 600
 window = pygame.display.set_mode((LARGURA, ALTURA))
 pygame.display.set_caption('Hello World!')
-
+imagem = pygame.image.load("New Piskel.png")
+imagem = pygame.transform.scale(imagem, (40, 40))
 
 raio = 20
 diametro = raio * 2
 x = LARGURA // 2
 y = ALTURA // 2
 # ----- Inicia estruturas de dados
+tamanho = 40
 
 game = True
 while game:
@@ -26,18 +28,18 @@ while game:
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_w:
-                y -= diametro
+                y -= tamanho
             if event.key == pygame.K_s:
-                y += diametro
+                y += tamanho
             if event.key == pygame.K_a:
-                x -= diametro
+                x -= tamanho
             if event.key == pygame.K_d:
-                x += diametro
+                x += tamanho
 
-    x = max(raio, min(LARGURA - raio, x))
-    y = max(raio, min(ALTURA - raio, y))
+    x = max(0, min(LARGURA - tamanho, x))
+    y = max(0, min(ALTURA - tamanho, y))
 
     # ----- Gera saídas
     window.fill((0,0,0))
-    pygame.draw.circle(window, (106,90,205), (x, y), raio)
+    window.blit(imagem, (x, y))
     pygame.display.update()
