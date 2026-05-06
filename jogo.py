@@ -17,11 +17,22 @@ costas = pygame.image.load(os.path.join(base, "costas.png"))
 frente = pygame.image.load(os.path.join(base, "frente.png"))
 direita = pygame.image.load(os.path.join(base, "direita.png"))
 esquerda = pygame.image.load(os.path.join(base, "esquerda.png"))
+
 estrada = pygame.image.load(os.path.join(base, "EstradaTeste.png"))
 grama = pygame.image.load(os.path.join(base, "GramaTeste.png"))
 fundo = pygame.image.load(os.path.join(base, "fundo.png"))
+
+carro_amarelo = pygame.image.load(os.path.join(base, "amarelo.png"))
+carro_vermelho = pygame.image.load(os.path.join(base, "vermelho.png"))
+carro_rosa = pygame.image.load(os.path.join(base, "rosa.png"))
+carro_azul = pygame.image.load(os.path.join(base, "azul.png"))
+carro_preto = pygame.image.load(os.path.join(base, "preto.png"))
+carro_branco = pygame.image.load(os.path.join(base, "brancop.png"))
+
+
 tamanho = 40
 altura_faixa = 80
+
 img_cima = pygame.transform.scale(frente, (tamanho, tamanho))
 img_baixo = pygame.transform.scale(costas, (tamanho, tamanho))
 img_esquerda = pygame.transform.scale(esquerda, (tamanho, tamanho))
@@ -30,12 +41,18 @@ img_estrada = pygame.transform.scale(estrada, (LARGURA, tamanho))
 img_grama = pygame.transform.scale(grama, (LARGURA, tamanho))
 img_fundo = pygame.transform.scale(fundo, (LARGURA, ALTURA))
 imagem = img_baixo
+
 blocos = [[img_grama, 0], [img_estrada, 80]]
 velocidade = 2
 raio = 20
 diametro = raio * 2
 x = LARGURA // 2
 y = ALTURA // 2
+
+LARGURA_CARRO = 60
+ALTURA_CARRO  = 35
+
+carros_disp = [pygame.transform.scale(carro_amarelo ,(LARGURA_CARRO, ALTURA_CARRO)), pygame.transform.scale(carro_rosa ,(LARGURA_CARRO, ALTURA_CARRO)), pygame.transform.scale(carro_vermelho ,(LARGURA_CARRO, ALTURA_CARRO)), pygame.transform.scale(carro_azul ,(LARGURA_CARRO, ALTURA_CARRO)), pygame.transform.scale(carro_branco ,(LARGURA_CARRO, ALTURA_CARRO)), pygame.transform.scale(carro_preto ,(LARGURA_CARRO, ALTURA_CARRO))]
 # ----- Inicia estruturas de dados
 
 
