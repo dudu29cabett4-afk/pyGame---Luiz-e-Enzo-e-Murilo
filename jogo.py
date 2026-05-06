@@ -57,7 +57,7 @@ carros_disp = [
 # ══════════════════════════════════════════════════════════════════════════════
 
 VELOCIDADE_CAMERA = 2            # pixels / frame — avanço automático da câmera
-PLAYER_ALVO_Y     = ALTURA * 2 // 3  # posição Y desejada do personagem na tela
+PLAYER_ALVO_Y     = ALTURA * 2 // 3 -100 # posição Y desejada do personagem na tela
 
 # Posição do personagem no ESPAÇO DE MUNDO (floats para suavidade)
 player_wx: float = LARGURA / 2 
