@@ -6,8 +6,9 @@ import pygame
 import random
 
 pygame.init()
+info = pygame.display.Info()
+ALTURA = info.current_h - 60
 LARGURA = 800
-ALTURA = 600
 window = pygame.display.set_mode((LARGURA, ALTURA))
 pygame.display.set_caption('Hello World!')
 base = os.path.dirname(__file__)
@@ -18,15 +19,16 @@ direita = pygame.image.load(os.path.join(base, "direita.png"))
 esquerda = pygame.image.load(os.path.join(base, "esquerda.png"))
 estrada = pygame.image.load(os.path.join(base, "EstradaTeste.png"))
 grama = pygame.image.load(os.path.join(base, "GramaTeste.png"))
-
+fundo = pygame.image.load(os.path.join(base, "fundo.png"))
 tamanho = 40
 altura_faixa = 80
 img_cima = pygame.transform.scale(frente, (tamanho, tamanho))
 img_baixo = pygame.transform.scale(costas, (tamanho, tamanho))
 img_esquerda = pygame.transform.scale(esquerda, (tamanho, tamanho))
 img_direita = pygame.transform.scale(direita, (tamanho, tamanho))
-img_estrada = pygame.transform.scale(estrada, (800, 80))
-img_grama = pygame.transform.scale(grama, (800, 80))
+img_estrada = pygame.transform.scale(estrada, (LARGURA, tamanho))
+img_grama = pygame.transform.scale(grama, (LARGURA, tamanho))
+img_fundo = pygame.transform.scale(fundo, (LARGURA, ALTURA))
 imagem = img_baixo
 blocos = [[img_grama, 0], [img_estrada, 80]]
 velocidade = 2
@@ -73,7 +75,7 @@ while game:
         game = False
 
     # ----- Gera saídas
-    window.fill((0,0,0))
+    window.blit(fundo, (0, 0))
     for bloco in blocos:
         window.blit(bloco[0], (0, bloco[1]))
     window.blit(imagem, (x, y))
