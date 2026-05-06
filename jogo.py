@@ -7,7 +7,7 @@ info = pygame.display.Info()
 ALTURA = 700
 LARGURA = 500
 window = pygame.display.set_mode((LARGURA, ALTURA))
-pygame.display.set_caption('Hello World!')
+pygame.display.set_caption('Cruze Quatá!')
 base = os.path.dirname(__file__)
 
 # ── Carregamento de imagens ────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ direita       = pygame.image.load(os.path.join(base, "pasta_imagens/direita.png"
 esquerda      = pygame.image.load(os.path.join(base, "pasta_imagens/esquerda.png"))
 estrada       = pygame.image.load(os.path.join(base, "pasta_imagens/EstradaTeste.png"))
 grama         = pygame.image.load(os.path.join(base, "pasta_imagens/GramaTeste.png"))
-fundo_img     = pygame.image.load(os.path.join(base, "pasta_imagens/fundo.png"))
+fundo_img     = pygame.image.load(os.path.join(base, "pasta_imagens/fundoGame.png"))
 carro_amarelo = pygame.image.load(os.path.join(base, "pasta_imagens/amarelo.png"))
 carro_vermelho= pygame.image.load(os.path.join(base, "pasta_imagens/vermelho.png"))
 carro_rosa    = pygame.image.load(os.path.join(base, "pasta_imagens/rosa.png"))
@@ -84,6 +84,33 @@ def gerar_tile(linha: int) -> pygame.Surface:
 imagem = img_baixo
 game   = True
 clock  = pygame.time.Clock()
+
+fonte = pygame.font.SysFont("arial", 28)
+
+def tela_inicial():
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    return  # sai da tela inicial
+
+        # Desenha fundo
+        window.blit(img_fundo, (0, 0))
+
+        # Texto (com efeito piscando)
+        if pygame.time.get_ticks() % 1000 < 500:
+            texto = fonte.render("Pressione ESPAÇO para começar", True, (255, 255, 255))
+            rect = texto.get_rect(center=(LARGURA // 2, ALTURA - 80))
+            window.blit(texto, rect)
+
+        pygame.display.update()
+        clock.tick(30)
+
+tela_inicial()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  LOOP PRINCIPAL
