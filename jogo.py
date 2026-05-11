@@ -23,11 +23,13 @@ carro_preto    = pygame.image.load(os.path.join(base, "pasta_imagens/preto.png")
 carro_branco   = pygame.image.load(os.path.join(base, "pasta_imagens/brancop.png"))
 TAMANHO_TILE  = 48
 PLAYER_ALVO_Y = ALTURA * 2 // 3 - 100
+
 def escalar_carro(img):
     nova_altura  = TAMANHO_TILE
     orig_w, orig_h = img.get_size()
     nova_largura = int(orig_w * (nova_altura / orig_h))
     return pygame.transform.scale(img, (nova_largura, nova_altura))
+
 img_cima     = pygame.transform.scale(costas,   (TAMANHO_TILE, TAMANHO_TILE))
 img_baixo    = pygame.transform.scale(frente,   (TAMANHO_TILE, TAMANHO_TILE))
 img_esquerda = pygame.transform.scale(esquerda, (TAMANHO_TILE, TAMANHO_TILE))
@@ -36,10 +38,13 @@ img_estrada  = pygame.transform.scale(estrada,  (LARGURA, TAMANHO_TILE))
 img_grama    = pygame.transform.scale(grama,    (LARGURA, TAMANHO_TILE))
 img_fundo    = pygame.transform.scale(fundo_img,      (LARGURA, ALTURA))
 img_fundo_fim= pygame.transform.scale(fundo_fim_img,  (LARGURA, ALTURA))
+
+# --- Rio mais claro: azul suave e luminoso ---
 img_rio = pygame.Surface((LARGURA, TAMANHO_TILE))
-img_rio.fill((30, 100, 200))
+img_rio.fill((80, 170, 230))  # azul mais claro
 for i in range(0, LARGURA, 30):
-    pygame.draw.ellipse(img_rio, (60, 140, 230), (i, TAMANHO_TILE//2 - 4, 20, 8))
+    pygame.draw.ellipse(img_rio, (130, 200, 255), (i, TAMANHO_TILE//2 - 4, 20, 8))
+
 carros_disp_r = [escalar_carro(c) for c in (carro_amarelo, carro_rosa, carro_vermelho, carro_azul, carro_branco, carro_preto)]
 carros_disp_l = [pygame.transform.flip(img, True, False) for img in carros_disp_r]
 troncos_disp_r = []
@@ -52,12 +57,16 @@ for largura_tronco in [96, 120, 144]:
         pygame.draw.ellipse(surf, (80, 50, 25), (xi, 14, 12, 8))
     troncos_disp_r.append(surf)
     troncos_disp_l.append(pygame.transform.flip(surf, True, False))
+
 LARGURA_CARRO = carros_disp_r[0].get_width()
 ALTURA_CARRO  = TAMANHO_TILE
 VELOCIDADE_CAMERA = 2
 SAFE_ZONE_LINHAS  = 1
 fonte       = pygame.font.SysFont("arial", 28, bold=True)
 fonte_botao = pygame.font.SysFont("arial", 30, bold=True)
+fonte_score = pygame.font.SysFont("arial", 24, bold=True)
+fonte_titulo = pygame.font.SysFont("arial", 20)
+
 tile_map:      dict = {}
 lane_data:     dict = {}
 carros_ativos: list = []
@@ -65,11 +74,13 @@ troncos_ativos: list = []
 TIPO_GRAMA   = "grama"
 TIPO_ESTRADA = "estrada"
 TIPO_RIO     = "rio"
+
 def resetar_mundo():
     tile_map.clear()
     lane_data.clear()
     carros_ativos.clear()
     troncos_ativos.clear()
+
 def gerar_tile(linha: int):
     if linha not in tile_map:
         linha_base  = int(PLAYER_ALVO_Y // TAMANHO_TILE)
@@ -77,8 +88,9 @@ def gerar_tile(linha: int):
         if linha >= safe_inicio:
             tile_map[linha] = (img_grama, TIPO_GRAMA)
         else:
+            # Menos rio: peso reduzido de 2 para 1
             escolha = random.choices(
-                [TIPO_GRAMA, TIPO_ESTRADA, TIPO_RIO], weights=[2, 3, 2]
+                [TIPO_GRAMA, TIPO_ESTRADA, TIPO_RIO], weights=[3, 4, 1]
             )[0]
             if escolha == TIPO_GRAMA:
                 tile_map[linha] = (img_grama, TIPO_GRAMA)
@@ -87,15 +99,21 @@ def gerar_tile(linha: int):
             else:
                 tile_map[linha] = (img_rio, TIPO_RIO)
     return tile_map[linha]
-def obter_lane_data(linha: int) -> dict:
+
+def calcular_multiplicador_velocidade(score: int) -> float:
+    """Velocidade cresce suavemente com o score. Máximo de ~2x ao chegar em 100 pontos."""
+    return 1.0 + min(score / 120.0, 1.0)
+
+def obter_lane_data(linha: int, score: int = 0) -> dict:
     if linha not in lane_data:
         direcao    = 1 if linha % 2 == 0 else -1
         tipo = gerar_tile(linha)[1]
+        mult = calcular_multiplicador_velocidade(score)
         if tipo == TIPO_RIO:
-            velocidade = random.uniform(2.0, 4.5)
+            velocidade = random.uniform(2.0, 4.5) * mult
             spawn_gap  = random.randint(int(LARGURA * 0.35), int(LARGURA * 0.6))
         else:
-            velocidade = random.uniform(4.5, 9.0)
+            velocidade = random.uniform(4.5, 9.0) * mult
             spawn_gap  = random.randint(int(LARGURA * 0.35), int(LARGURA * 0.65))
         proximo_x  = float(-LARGURA_CARRO) if direcao == 1 else float(LARGURA)
         lane_data[linha] = {
@@ -105,6 +123,7 @@ def obter_lane_data(linha: int) -> dict:
             "proximo_spawn_x": proximo_x,
         }
     return lane_data[linha]
+
 class Carro:
     __slots__ = ("linha", "x", "velocidade", "direcao", "img", "largura")
     def __init__(self, linha, x, velocidade, direcao, img):
@@ -132,7 +151,8 @@ class Carro:
             self.largura - m * 2,
             ALTURA_CARRO  - m * 2,
         )
-def tentar_spawnar_carros(linha_ini: int, linha_fim: int):
+
+def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
     linha_base  = int(PLAYER_ALVO_Y // TAMANHO_TILE)
     safe_inicio = linha_base - SAFE_ZONE_LINHAS
     for linha in range(linha_ini, linha_fim + 1):
@@ -140,7 +160,7 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int):
             continue
         surf, tipo = gerar_tile(linha)
         if tipo == TIPO_ESTRADA:
-            ld = obter_lane_data(linha)
+            ld = obter_lane_data(linha, score)
             d  = ld["direcao"]
             v  = ld["velocidade"]
             ja_existem = [c for c in carros_ativos if c.linha == linha]
@@ -160,7 +180,7 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int):
                     carros_ativos.append(Carro(linha, float(LARGURA), v, d, img))
                     ld["proximo_spawn_x"] -= ld["spawn_gap"]
         elif tipo == TIPO_RIO:
-            ld = obter_lane_data(linha)
+            ld = obter_lane_data(linha, score)
             d  = ld["direcao"]
             v  = ld["velocidade"]
             ja_existem = [t for t in troncos_ativos if t.linha == linha]
@@ -179,25 +199,103 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int):
                     img = random.choice(troncos_disp_l)
                     troncos_ativos.append(Carro(linha, float(LARGURA), v, d, img))
                     ld["proximo_spawn_x"] -= ld["spawn_gap"]
+
+def desenhar_painel_como_jogar():
+    """Desenha o painel de instruções sobre a tela."""
+    overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    window.blit(overlay, (0, 0))
+
+    painel_w, painel_h = 380, 360
+    painel_x = (LARGURA - painel_w) // 2
+    painel_y = (ALTURA - painel_h) // 2
+
+    painel = pygame.Surface((painel_w, painel_h), pygame.SRCALPHA)
+    painel.fill((20, 20, 40, 220))
+    pygame.draw.rect(painel, (255, 200, 50), (0, 0, painel_w, painel_h), 3, border_radius=12)
+    window.blit(painel, (painel_x, painel_y))
+
+    titulo = fonte_botao.render("COMO JOGAR", True, (255, 200, 50))
+    window.blit(titulo, titulo.get_rect(center=(LARGURA // 2, painel_y + 35)))
+
+    linhas_texto = [
+        "W  →  Andar para cima (+ 1 ponto)",
+        "S  →  Andar para baixo",
+        "A  →  Andar para esquerda",
+        "D  →  Andar para direita",
+        "",
+        "Desvie dos carros na estrada!",
+        "Atravesse rios em cima de troncos!",
+        "Cair na água = morte!",
+        "",
+        "Quanto mais longe, mais rápido!",
+    ]
+    y_linha = painel_y + 75
+    for linha in linhas_texto:
+        cor = (200, 220, 255) if linha else (255, 255, 255)
+        t = fonte_titulo.render(linha, True, cor)
+        window.blit(t, t.get_rect(center=(LARGURA // 2, y_linha)))
+        y_linha += 26
+
+    # Botão fechar
+    btn_fechar = pygame.Rect(LARGURA // 2 - 70, painel_y + painel_h - 55, 140, 40)
+    mouse = pygame.mouse.get_pos()
+    cor_btn = (200, 80, 20) if btn_fechar.collidepoint(mouse) else (50, 50, 80)
+    pygame.draw.rect(window, cor_btn, btn_fechar, border_radius=8)
+    pygame.draw.rect(window, (255, 200, 50), btn_fechar, 2, border_radius=8)
+    t = fonte_botao.render("FECHAR", True, (255, 255, 255))
+    window.blit(t, t.get_rect(center=btn_fechar.center))
+    return btn_fechar
+
 def tela_inicial():
     clock_menu = pygame.time.Clock()
+    btn_w, btn_h = 200, 50
+    btn_como_jogar = pygame.Rect(LARGURA // 2 - btn_w // 2, ALTURA // 2 + 20, btn_w, btn_h)
+    mostrar_como_jogar = False
+
     while True:
+        mouse = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and not mostrar_como_jogar:
+                    return
+                if event.key == pygame.K_ESCAPE:
+                    mostrar_como_jogar = False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if mostrar_como_jogar:
+                    btn_fechar_rect = pygame.Rect(LARGURA // 2 - 70, (ALTURA - 360) // 2 + 360 - 55, 140, 40)
+                    if btn_fechar_rect.collidepoint(mouse):
+                        mostrar_como_jogar = False
+                else:
+                    if btn_como_jogar.collidepoint(mouse):
+                        mostrar_como_jogar = True
+
         window.blit(img_fundo, (0, 0))
+
         if pygame.time.get_ticks() % 1000 < 500:
             texto  = fonte.render("Pressione ESPAÇO para começar", True, (255, 255, 255))
-            rect   = texto.get_rect(center=(LARGURA // 2, 50))
+            rect   = texto.get_rect(center=(LARGURA // 2, ALTURA // 2 - 20))
             sombra = fonte.render("Pressione ESPAÇO para começar", True, (0, 0, 0))
             window.blit(sombra, (rect.x + 2, rect.y + 2))
             window.blit(texto, rect)
+
+        # Botão "Como Jogar"
+        cor_btn = (200, 80, 20) if btn_como_jogar.collidepoint(mouse) else (30, 30, 60)
+        pygame.draw.rect(window, cor_btn, btn_como_jogar, border_radius=10)
+        pygame.draw.rect(window, (255, 200, 50), btn_como_jogar, 2, border_radius=10)
+        t = fonte_botao.render("Como Jogar", True, (255, 255, 255))
+        window.blit(t, t.get_rect(center=btn_como_jogar.center))
+
+        if mostrar_como_jogar:
+            desenhar_painel_como_jogar()
+
         pygame.display.update()
         clock_menu.tick(30)
-def tela_game_over() -> str:
+
+def tela_game_over(score: int) -> str:
     clock_go = pygame.time.Clock()
     btn_w, btn_h = 160, 55
     btn_retry = pygame.Rect(LARGURA // 2 - btn_w - 20, ALTURA // 2 + 60, btn_w, btn_h)
@@ -207,6 +305,10 @@ def tela_game_over() -> str:
     COR_TEXTO  = (255, 255, 255)
     COR_BORDA  = (255, 255, 255)
     btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
+
+    texto_score = fonte.render(f"Pontuação: {score}", True, (255, 220, 50))
+    sombra_score = fonte.render(f"Pontuação: {score}", True, (0, 0, 0))
+
     while True:
         mouse = pygame.mouse.get_pos()
         for event in pygame.event.get():
@@ -219,11 +321,18 @@ def tela_game_over() -> str:
                 if btn_menu.collidepoint(mouse):
                     return "menu"
         window.blit(img_fundo_fim, (0, 0))
+
+        # Mostrar score na tela de game over
+        sr = texto_score.get_rect(center=(LARGURA // 2, ALTURA // 2 + 10))
+        window.blit(sombra_score, (sr.x + 2, sr.y + 2))
+        window.blit(texto_score, sr)
+
         btn_surf.fill(COR_HOVER if btn_retry.collidepoint(mouse) else COR_NORMAL)
         window.blit(btn_surf, btn_retry.topleft)
         pygame.draw.rect(window, COR_BORDA, btn_retry, 2, border_radius=8)
         t = fonte_botao.render("RETRY", True, COR_TEXTO)
         window.blit(t, t.get_rect(center=btn_retry.center))
+
         btn_surf.fill(COR_HOVER if btn_menu.collidepoint(mouse) else COR_NORMAL)
         window.blit(btn_surf, btn_menu.topleft)
         pygame.draw.rect(window, COR_BORDA, btn_menu, 2, border_radius=8)
@@ -231,6 +340,7 @@ def tela_game_over() -> str:
         window.blit(t, t.get_rect(center=btn_menu.center))
         pygame.display.update()
         clock_go.tick(30)
+
 def iniciar_jogo() -> str:
     resetar_mundo()
     player_linha = int(PLAYER_ALVO_Y // TAMANHO_TILE)
@@ -240,6 +350,8 @@ def iniciar_jogo() -> str:
     camera_ativa = False
     imagem = img_baixo
     clock  = pygame.time.Clock()
+    score  = 0  # Pontuação
+
     while True:
         clock.tick(30)
         for event in pygame.event.get():
@@ -251,6 +363,7 @@ def iniciar_jogo() -> str:
                     player_wy   -= TAMANHO_TILE
                     imagem       = img_cima
                     camera_ativa = True
+                    score        += 1  # +1 ponto por passo para frente
                 if event.key == pygame.K_s:
                     player_wy  += TAMANHO_TILE
                     imagem      = img_baixo
@@ -260,24 +373,31 @@ def iniciar_jogo() -> str:
                 if event.key == pygame.K_d:
                     player_wx  += TAMANHO_TILE
                     imagem      = img_direita
+
         if camera_ativa:
             camera_y -= VELOCIDADE_CAMERA
         target_cam = player_wy - PLAYER_ALVO_Y
         if camera_y > target_cam:
             camera_y = target_cam
+
         player_screen_y = player_wy - camera_y
         player_screen_x = int(player_wx)
+
         if player_screen_y >= ALTURA or player_screen_y < -TAMANHO_TILE:
-            return tela_game_over()
+            return tela_game_over(score)
+
         linha_ini = int(camera_y // TAMANHO_TILE) - 1
         linha_fim = int((camera_y + ALTURA) // TAMANHO_TILE) + 1
-        tentar_spawnar_carros(linha_ini, linha_fim)
+
+        tentar_spawnar_carros(linha_ini, linha_fim, score)
+
         for c in carros_ativos:
             c.update()
         carros_ativos[:] = [c for c in carros_ativos if not c.fora_da_tela()]
         for t in troncos_ativos:
             t.update()
         troncos_ativos[:] = [t for t in troncos_ativos if not t.fora_da_tela()]
+
         player_linha_atual = int(player_wy // TAMANHO_TILE)
         tile_atual, tipo_atual = gerar_tile(player_linha_atual)
         player_rect = pygame.Rect(
@@ -286,11 +406,13 @@ def iniciar_jogo() -> str:
             TAMANHO_TILE - 8,
             TAMANHO_TILE - 8,
         )
+
         if tipo_atual == TIPO_RIO:
             for t in troncos_ativos:
                 if t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect):
                     player_wx += t.velocidade * t.direcao
                     break
+
         player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
         player_screen_x = int(player_wx)
         player_rect = pygame.Rect(
@@ -299,6 +421,7 @@ def iniciar_jogo() -> str:
             TAMANHO_TILE - 8,
             TAMANHO_TILE - 8,
         )
+
         morreu = False
         if tipo_atual == TIPO_ESTRADA:
             for c in carros_ativos:
@@ -313,8 +436,11 @@ def iniciar_jogo() -> str:
                     break
             if not em_tronco:
                 morreu = True
+
         if morreu:
-            return tela_game_over()
+            return tela_game_over(score)
+
+        # Desenhar
         window.blit(img_fundo, (0, 0))
         for linha in range(linha_ini, linha_fim + 1):
             sy = int(linha * TAMANHO_TILE - camera_y)
@@ -324,8 +450,9 @@ def iniciar_jogo() -> str:
                 onda = pygame.Surface((LARGURA, TAMANHO_TILE), pygame.SRCALPHA)
                 t_off = pygame.time.get_ticks() // 200
                 for xi in range((t_off * 3) % 30 - 30, LARGURA, 30):
-                    pygame.draw.ellipse(onda, (100, 180, 255, 80), (xi, TAMANHO_TILE//2 - 3, 18, 6))
+                    pygame.draw.ellipse(onda, (180, 220, 255, 90), (xi, TAMANHO_TILE//2 - 3, 18, 6))
                 window.blit(onda, (0, sy))
+
         for t in troncos_ativos:
             sy = t.screen_y(camera_y)
             if -TAMANHO_TILE <= sy <= ALTURA:
@@ -334,8 +461,17 @@ def iniciar_jogo() -> str:
             sy = c.screen_y(camera_y)
             if -ALTURA_CARRO <= sy <= ALTURA:
                 c.draw(window, camera_y)
+
         window.blit(imagem, (player_screen_x, int(player_screen_y)))
+
+        # --- HUD: Score ---
+        score_texto  = fonte_score.render(f"Score: {score}", True, (255, 255, 255))
+        score_sombra = fonte_score.render(f"Score: {score}", True, (0, 0, 0))
+        window.blit(score_sombra, (12, 12))
+        window.blit(score_texto,  (10, 10))
+
         pygame.display.update()
+
 tela_inicial()
 while True:
     resultado = iniciar_jogo()
