@@ -39,9 +39,8 @@ img_grama    = pygame.transform.scale(grama,    (LARGURA, TAMANHO_TILE))
 img_fundo    = pygame.transform.scale(fundo_img,      (LARGURA, ALTURA))
 img_fundo_fim= pygame.transform.scale(fundo_fim_img,  (LARGURA, ALTURA))
 
-# --- Rio mais claro: azul suave e luminoso ---
 img_rio = pygame.Surface((LARGURA, TAMANHO_TILE))
-img_rio.fill((80, 170, 230))  # azul mais claro
+img_rio.fill((80, 170, 230))
 for i in range(0, LARGURA, 30):
     pygame.draw.ellipse(img_rio, (130, 200, 255), (i, TAMANHO_TILE//2 - 4, 20, 8))
 
@@ -62,10 +61,12 @@ LARGURA_CARRO = carros_disp_r[0].get_width()
 ALTURA_CARRO  = TAMANHO_TILE
 VELOCIDADE_CAMERA = 2
 SAFE_ZONE_LINHAS  = 1
-fonte       = pygame.font.SysFont("arial", 28, bold=True)
-fonte_botao = pygame.font.SysFont("arial", 30, bold=True)
-fonte_score = pygame.font.SysFont("arial", 24, bold=True)
-fonte_titulo = pygame.font.SysFont("arial", 20)
+fonte        = pygame.font.SysFont("arial", 28, bold=True)
+fonte_botao  = pygame.font.SysFont("arial", 28, bold=True)
+fonte_score  = pygame.font.SysFont("arial", 24, bold=True)
+fonte_titulo = pygame.font.SysFont("arial", 19)
+fonte_hud    = pygame.font.SysFont("arial", 20, bold=True)
+fonte_kbd    = pygame.font.SysFont("arial", 14, bold=True)
 
 tile_map:      dict = {}
 lane_data:     dict = {}
@@ -74,6 +75,28 @@ troncos_ativos: list = []
 TIPO_GRAMA   = "grama"
 TIPO_ESTRADA = "estrada"
 TIPO_RIO     = "rio"
+
+# --- Power-up: estrela dourada ---
+POWERUP_DURACAO_MS = 10_000   # 10 segundos de imunidade
+
+def criar_img_powerup():
+    size = 36
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    # Estrela de 5 pontas
+    import math
+    cx, cy = size // 2, size // 2
+    pontos = []
+    for i in range(10):
+        angulo = math.pi / 2 + i * math.pi / 5
+        r = (size // 2 - 2) if i % 2 == 0 else (size // 4)
+        pontos.append((cx + r * math.cos(angulo), cy - r * math.sin(angulo)))
+    pygame.draw.polygon(surf, (255, 220, 30), pontos)
+    pygame.draw.polygon(surf, (255, 160, 0), pontos, 2)
+    # brilho central
+    pygame.draw.circle(surf, (255, 255, 180), (cx, cy), 6)
+    return surf
+
+img_powerup = criar_img_powerup()
 
 def resetar_mundo():
     tile_map.clear()
@@ -88,7 +111,6 @@ def gerar_tile(linha: int):
         if linha >= safe_inicio:
             tile_map[linha] = (img_grama, TIPO_GRAMA)
         else:
-            # Menos rio: peso reduzido de 2 para 1
             escolha = random.choices(
                 [TIPO_GRAMA, TIPO_ESTRADA, TIPO_RIO], weights=[3, 4, 1]
             )[0]
@@ -101,7 +123,6 @@ def gerar_tile(linha: int):
     return tile_map[linha]
 
 def calcular_multiplicador_velocidade(score: int) -> float:
-    """Velocidade cresce suavemente com o score. Máximo de ~2x ao chegar em 100 pontos."""
     return 1.0 + min(score / 120.0, 1.0)
 
 def obter_lane_data(linha: int, score: int = 0) -> dict:
@@ -152,6 +173,38 @@ class Carro:
             ALTURA_CARRO  - m * 2,
         )
 
+class PowerUp:
+    """Estrela de imunidade que aparece no mapa."""
+    TAMANHO = 36
+
+    def __init__(self, wx: float, wy: float):
+        self.wx = wx
+        self.wy = wy
+        self.coletado = False
+
+    def screen_pos(self, camera_y):
+        return (int(self.wx), int(self.wy - camera_y))
+
+    def rect_mundo(self):
+        m = 4
+        return pygame.Rect(int(self.wx) + m, int(self.wy) + m,
+                           self.TAMANHO - m * 2, self.TAMANHO - m * 2)
+
+    def draw(self, surface, camera_y):
+        if self.coletado:
+            return
+        sx, sy = self.screen_pos(camera_y)
+        if -self.TAMANHO <= sy <= ALTURA:
+            # brilho pulsante
+            t = pygame.time.get_ticks()
+            alpha = int(120 + 80 * abs((t % 800) / 400.0 - 1))
+            glow = pygame.Surface((self.TAMANHO + 16, self.TAMANHO + 16), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (255, 230, 80, alpha),
+                               (self.TAMANHO // 2 + 8, self.TAMANHO // 2 + 8),
+                               self.TAMANHO // 2 + 6)
+            surface.blit(glow, (sx - 8, sy - 8))
+            surface.blit(img_powerup, (sx, sy))
+
 def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
     linha_base  = int(PLAYER_ALVO_Y // TAMANHO_TILE)
     safe_inicio = linha_base - SAFE_ZONE_LINHAS
@@ -200,73 +253,135 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
                     troncos_ativos.append(Carro(linha, float(LARGURA), v, d, img))
                     ld["proximo_spawn_x"] -= ld["spawn_gap"]
 
+def gerar_powerups_para_linhas(linha_ini, linha_fim, powerups: list,
+                                linhas_com_powerup: set, score: int):
+    """Tenta gerar power-ups aleatórios em linhas de grama visíveis."""
+    linha_base  = int(PLAYER_ALVO_Y // TAMANHO_TILE)
+    safe_inicio = linha_base - SAFE_ZONE_LINHAS
+    for linha in range(linha_ini, linha_fim + 1):
+        if linha >= safe_inicio:
+            continue
+        if linha in linhas_com_powerup:
+            continue
+        _, tipo = gerar_tile(linha)
+        if tipo != TIPO_GRAMA:
+            continue
+        # Chance de ~8% por linha nova de grama de aparecer uma estrela
+        chance = 0.08 + min(score / 500.0, 0.06)
+        if random.random() < chance:
+            col = random.randint(1, LARGURA // TAMANHO_TILE - 2)
+            wx = float(col * TAMANHO_TILE)
+            wy = float(linha * TAMANHO_TILE + (TAMANHO_TILE - PowerUp.TAMANHO) // 2)
+            powerups.append(PowerUp(wx, wy))
+            linhas_com_powerup.add(linha)
+
+# ─────────────────────────────────────────────
+#  Helpers de UI  (botão com tecla de atalho)
+# ─────────────────────────────────────────────
+
+def desenhar_botao(surface, rect, label, kbd_hint, hover,
+                   cor_normal=(30, 30, 60), cor_hover=(180, 70, 10),
+                   cor_borda=(255, 200, 50), cor_texto=(255, 255, 255)):
+    cor = cor_hover if hover else cor_normal
+    pygame.draw.rect(surface, cor, rect, border_radius=10)
+    pygame.draw.rect(surface, cor_borda, rect, 2, border_radius=10)
+    # label principal
+    t = fonte_botao.render(label, True, cor_texto)
+    surface.blit(t, t.get_rect(center=(rect.centerx, rect.centery - 7)))
+    # tecla de atalho
+    hint = fonte_kbd.render(f"[{kbd_hint}]", True, (220, 200, 100))
+    surface.blit(hint, hint.get_rect(center=(rect.centerx, rect.centery + 13)))
+
 def desenhar_painel_como_jogar():
-    """Desenha o painel de instruções sobre a tela."""
     overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 180))
+    overlay.fill((0, 0, 0, 195))
     window.blit(overlay, (0, 0))
 
-    painel_w, painel_h = 380, 360
+    painel_w, painel_h = 420, 430
     painel_x = (LARGURA - painel_w) // 2
-    painel_y = (ALTURA - painel_h) // 2
+    painel_y = (ALTURA  - painel_h) // 2
 
     painel = pygame.Surface((painel_w, painel_h), pygame.SRCALPHA)
-    painel.fill((20, 20, 40, 220))
-    pygame.draw.rect(painel, (255, 200, 50), (0, 0, painel_w, painel_h), 3, border_radius=12)
+    painel.fill((15, 18, 42, 230))
+    pygame.draw.rect(painel, (255, 200, 50), (0, 0, painel_w, painel_h), 3, border_radius=14)
     window.blit(painel, (painel_x, painel_y))
 
-    titulo = fonte_botao.render("COMO JOGAR", True, (255, 200, 50))
-    window.blit(titulo, titulo.get_rect(center=(LARGURA // 2, painel_y + 35)))
+    # Título
+    titulo = fonte_botao.render("COMO JOGAR", True, (255, 210, 50))
+    window.blit(titulo, titulo.get_rect(center=(LARGURA // 2, painel_y + 32)))
 
-    linhas_texto = [
-        "W  →  Andar para cima (+ 1 ponto)",
-        "S  →  Andar para baixo",
-        "A  →  Andar para esquerda",
-        "D  →  Andar para direita",
-        "",
-        "Desvie dos carros na estrada!",
-        "Atravesse rios em cima de troncos!",
-        "Cair na água = morte!",
-        "",
-        "Quanto mais longe, mais rápido!",
+    # Separador
+    pygame.draw.line(window, (255, 200, 50, 180),
+                     (painel_x + 20, painel_y + 52),
+                     (painel_x + painel_w - 20, painel_y + 52), 1)
+
+    secoes = [
+        ("MOVIMENTAÇÃO", [
+            ("W", "Andar para cima  (+1 ponto)"),
+            ("S", "Andar para baixo"),
+            ("A", "Andar para esquerda"),
+            ("D", "Andar para direita"),
+        ]),
+        ("OBSTÁCULOS", [
+            ("🚗", "Desvie dos carros na estrada!"),
+            ("🌊", "Atravesse rios em cima de troncos!"),
+            ("💀", "Cair na água = morte!"),
+        ]),
+        ("POWER-UP ⭐", [
+            ("★", "Colete a estrela dourada para"),
+            ("",  "ficar imune por 10 segundos!"),
+        ]),
+        ("DIFICULDADE", [
+            ("📈", "Quanto mais longe, mais rápido!"),
+        ]),
     ]
-    y_linha = painel_y + 75
-    for linha in linhas_texto:
-        cor = (200, 220, 255) if linha else (255, 255, 255)
-        t = fonte_titulo.render(linha, True, cor)
-        window.blit(t, t.get_rect(center=(LARGURA // 2, y_linha)))
-        y_linha += 26
 
-    # Botão fechar
-    btn_fechar = pygame.Rect(LARGURA // 2 - 70, painel_y + painel_h - 55, 140, 40)
+    y_cur = painel_y + 64
+    for titulo_sec, itens in secoes:
+        # cabeçalho da seção
+        hdr = fonte_hud.render(titulo_sec, True, (255, 180, 40))
+        window.blit(hdr, (painel_x + 18, y_cur))
+        y_cur += 22
+        for icone, texto in itens:
+            if icone:
+                ic = fonte_titulo.render(icone, True, (160, 220, 255))
+                window.blit(ic, (painel_x + 22, y_cur))
+            tx = fonte_titulo.render(texto, True, (210, 225, 255))
+            window.blit(tx, (painel_x + 50, y_cur))
+            y_cur += 21
+        y_cur += 6  # espaço entre seções
+
+    # Botão FECHAR
+    btn_fechar = pygame.Rect(LARGURA // 2 - 75, painel_y + painel_h - 52, 150, 42)
     mouse = pygame.mouse.get_pos()
-    cor_btn = (200, 80, 20) if btn_fechar.collidepoint(mouse) else (50, 50, 80)
-    pygame.draw.rect(window, cor_btn, btn_fechar, border_radius=8)
-    pygame.draw.rect(window, (255, 200, 50), btn_fechar, 2, border_radius=8)
-    t = fonte_botao.render("FECHAR", True, (255, 255, 255))
-    window.blit(t, t.get_rect(center=btn_fechar.center))
+    desenhar_botao(window, btn_fechar, "FECHAR", "ESC",
+                   btn_fechar.collidepoint(mouse),
+                   cor_normal=(50, 20, 70), cor_hover=(160, 40, 10))
     return btn_fechar
 
 def tela_inicial():
     clock_menu = pygame.time.Clock()
-    btn_w, btn_h = 200, 50
-    btn_como_jogar = pygame.Rect(LARGURA // 2 - btn_w // 2, ALTURA // 2 + 20, btn_w, btn_h)
+    btn_w, btn_h = 220, 58
+    btn_como_jogar = pygame.Rect(LARGURA // 2 - btn_w // 2, ALTURA // 2 + 30, btn_w, btn_h)
     mostrar_como_jogar = False
 
     while True:
         mouse = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
+                pygame.quit(); exit()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and not mostrar_como_jogar:
                     return
+                if event.key == pygame.K_h and not mostrar_como_jogar:
+                    mostrar_como_jogar = True
                 if event.key == pygame.K_ESCAPE:
                     mostrar_como_jogar = False
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if mostrar_como_jogar:
-                    btn_fechar_rect = pygame.Rect(LARGURA // 2 - 70, (ALTURA - 360) // 2 + 360 - 55, 140, 40)
+                    btn_fechar_rect = pygame.Rect(
+                        LARGURA // 2 - 75,
+                        (ALTURA - 430) // 2 + 430 - 52, 150, 42)
                     if btn_fechar_rect.collidepoint(mouse):
                         mostrar_como_jogar = False
                 else:
@@ -276,18 +391,14 @@ def tela_inicial():
         window.blit(img_fundo, (0, 0))
 
         if pygame.time.get_ticks() % 1000 < 500:
-            texto  = fonte.render("Pressione ESPAÇO para começar", True, (255, 255, 255))
+            texto  = fonte.render("ESPAÇO para começar", True, (255, 255, 255))
             rect   = texto.get_rect(center=(LARGURA // 2, ALTURA // 2 - 20))
-            sombra = fonte.render("Pressione ESPAÇO para começar", True, (0, 0, 0))
+            sombra = fonte.render("ESPAÇO para começar", True, (0, 0, 0))
             window.blit(sombra, (rect.x + 2, rect.y + 2))
             window.blit(texto, rect)
 
-        # Botão "Como Jogar"
-        cor_btn = (200, 80, 20) if btn_como_jogar.collidepoint(mouse) else (30, 30, 60)
-        pygame.draw.rect(window, cor_btn, btn_como_jogar, border_radius=10)
-        pygame.draw.rect(window, (255, 200, 50), btn_como_jogar, 2, border_radius=10)
-        t = fonte_botao.render("Como Jogar", True, (255, 255, 255))
-        window.blit(t, t.get_rect(center=btn_como_jogar.center))
+        desenhar_botao(window, btn_como_jogar, "Como Jogar", "H",
+                       btn_como_jogar.collidepoint(mouse))
 
         if mostrar_como_jogar:
             desenhar_painel_como_jogar()
@@ -297,49 +408,77 @@ def tela_inicial():
 
 def tela_game_over(score: int) -> str:
     clock_go = pygame.time.Clock()
-    btn_w, btn_h = 160, 55
-    btn_retry = pygame.Rect(LARGURA // 2 - btn_w - 20, ALTURA // 2 + 60, btn_w, btn_h)
-    btn_menu  = pygame.Rect(LARGURA // 2 + 20,          ALTURA // 2 + 60, btn_w, btn_h)
-    COR_NORMAL = (30,  30,  30,  190)
-    COR_HOVER  = (200, 80,  20,  230)
-    COR_TEXTO  = (255, 255, 255)
-    COR_BORDA  = (255, 255, 255)
-    btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
+    btn_w, btn_h = 170, 58
+    btn_retry = pygame.Rect(LARGURA // 2 - btn_w - 15, ALTURA // 2 + 65, btn_w, btn_h)
+    btn_menu  = pygame.Rect(LARGURA // 2 + 15,          ALTURA // 2 + 65, btn_w, btn_h)
 
-    texto_score = fonte.render(f"Pontuação: {score}", True, (255, 220, 50))
+    texto_score  = fonte.render(f"Pontuação: {score}", True, (255, 220, 50))
     sombra_score = fonte.render(f"Pontuação: {score}", True, (0, 0, 0))
 
     while True:
         mouse = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
+                pygame.quit(); exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    return "retry"
+                if event.key == pygame.K_m:
+                    return "menu"
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if btn_retry.collidepoint(mouse):
                     return "retry"
                 if btn_menu.collidepoint(mouse):
                     return "menu"
+
         window.blit(img_fundo_fim, (0, 0))
 
-        # Mostrar score na tela de game over
-        sr = texto_score.get_rect(center=(LARGURA // 2, ALTURA // 2 + 10))
+        sr = texto_score.get_rect(center=(LARGURA // 2, ALTURA // 2 + 15))
         window.blit(sombra_score, (sr.x + 2, sr.y + 2))
         window.blit(texto_score, sr)
 
-        btn_surf.fill(COR_HOVER if btn_retry.collidepoint(mouse) else COR_NORMAL)
-        window.blit(btn_surf, btn_retry.topleft)
-        pygame.draw.rect(window, COR_BORDA, btn_retry, 2, border_radius=8)
-        t = fonte_botao.render("RETRY", True, COR_TEXTO)
-        window.blit(t, t.get_rect(center=btn_retry.center))
+        desenhar_botao(window, btn_retry, "RETRY", "R",
+                       btn_retry.collidepoint(mouse),
+                       cor_hover=(20, 140, 20))
+        desenhar_botao(window, btn_menu, "MENU", "M",
+                       btn_menu.collidepoint(mouse),
+                       cor_hover=(140, 40, 10))
 
-        btn_surf.fill(COR_HOVER if btn_menu.collidepoint(mouse) else COR_NORMAL)
-        window.blit(btn_surf, btn_menu.topleft)
-        pygame.draw.rect(window, COR_BORDA, btn_menu, 2, border_radius=8)
-        t = fonte_botao.render("MENU", True, COR_TEXTO)
-        window.blit(t, t.get_rect(center=btn_menu.center))
         pygame.display.update()
         clock_go.tick(30)
+
+# ─────────────────────────────────────────────
+#  HUD do power-up (barra de tempo)
+# ─────────────────────────────────────────────
+
+def desenhar_hud_powerup(restante_ms: int):
+    """Desenha indicador de escudo no canto superior direito."""
+    total = POWERUP_DURACAO_MS
+    frac  = max(0.0, restante_ms / total)
+
+    bw, bh = 130, 18
+    bx = LARGURA - bw - 10
+    by = 10
+
+    # ícone estrela
+    window.blit(img_powerup, (bx - 40, by - 8))
+
+    # fundo da barra
+    pygame.draw.rect(window, (30, 30, 60), (bx, by, bw, bh), border_radius=5)
+    # barra colorida
+    cor = (80, 220, 255) if restante_ms > 3000 else (255, 160, 30)
+    pygame.draw.rect(window, cor,
+                     (bx, by, int(bw * frac), bh), border_radius=5)
+    pygame.draw.rect(window, (255, 220, 80), (bx, by, bw, bh), 2, border_radius=5)
+
+    # texto de segundos
+    secs = restante_ms // 1000 + 1
+    t = fonte_kbd.render(f"IMUNE {secs}s", True, (255, 255, 255))
+    window.blit(t, t.get_rect(center=(bx + bw // 2, by + bh // 2)))
+
+# ─────────────────────────────────────────────
+#  Loop principal do jogo
+# ─────────────────────────────────────────────
 
 def iniciar_jogo() -> str:
     resetar_mundo()
@@ -350,20 +489,26 @@ def iniciar_jogo() -> str:
     camera_ativa = False
     imagem = img_baixo
     clock  = pygame.time.Clock()
-    score  = 0  # Pontuação
+    score  = 0
+
+    # power-ups
+    powerups: list = []
+    linhas_com_powerup: set = set()
+    imune_ate: int = 0        # timestamp pygame em ms quando a imunidade acaba
 
     while True:
         clock.tick(30)
+        agora = pygame.time.get_ticks()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
+                pygame.quit(); exit()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_w:
                     player_wy   -= TAMANHO_TILE
                     imagem       = img_cima
                     camera_ativa = True
-                    score        += 1  # +1 ponto por passo para frente
+                    score        += 1
                 if event.key == pygame.K_s:
                     player_wy  += TAMANHO_TILE
                     imagem      = img_baixo
@@ -390,6 +535,8 @@ def iniciar_jogo() -> str:
         linha_fim = int((camera_y + ALTURA) // TAMANHO_TILE) + 1
 
         tentar_spawnar_carros(linha_ini, linha_fim, score)
+        gerar_powerups_para_linhas(linha_ini, linha_fim, powerups,
+                                   linhas_com_powerup, score)
 
         for c in carros_ativos:
             c.update()
@@ -400,6 +547,12 @@ def iniciar_jogo() -> str:
 
         player_linha_atual = int(player_wy // TAMANHO_TILE)
         tile_atual, tipo_atual = gerar_tile(player_linha_atual)
+        player_rect_mundo = pygame.Rect(
+            int(player_wx) + 4,
+            int(player_wy) + 4,
+            TAMANHO_TILE - 8,
+            TAMANHO_TILE - 8,
+        )
         player_rect = pygame.Rect(
             player_screen_x + 4,
             int(player_screen_y) + 4,
@@ -407,6 +560,18 @@ def iniciar_jogo() -> str:
             TAMANHO_TILE - 8,
         )
 
+        # Checar coleta de power-up
+        for pu in powerups:
+            if not pu.coletado and player_rect_mundo.colliderect(pu.rect_mundo()):
+                pu.coletado = True
+                imune_ate = agora + POWERUP_DURACAO_MS
+
+        # Remover power-ups coletados ou fora da tela
+        powerups[:] = [p for p in powerups
+                       if not p.coletado and
+                       -TAMANHO_TILE <= p.wy - camera_y <= ALTURA + TAMANHO_TILE]
+
+        # Física do tronco
         if tipo_atual == TIPO_RIO:
             for t in troncos_ativos:
                 if t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect):
@@ -422,25 +587,28 @@ def iniciar_jogo() -> str:
             TAMANHO_TILE - 8,
         )
 
+        imune = agora < imune_ate
+
+        # Detecção de morte (ignorada se imune)
         morreu = False
-        if tipo_atual == TIPO_ESTRADA:
-            for c in carros_ativos:
-                if c.rect(camera_y).colliderect(player_rect):
+        if not imune:
+            if tipo_atual == TIPO_ESTRADA:
+                for c in carros_ativos:
+                    if c.rect(camera_y).colliderect(player_rect):
+                        morreu = True
+                        break
+            elif tipo_atual == TIPO_RIO:
+                em_tronco = any(
+                    t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect)
+                    for t in troncos_ativos
+                )
+                if not em_tronco:
                     morreu = True
-                    break
-        elif tipo_atual == TIPO_RIO:
-            em_tronco = False
-            for t in troncos_ativos:
-                if t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect):
-                    em_tronco = True
-                    break
-            if not em_tronco:
-                morreu = True
 
         if morreu:
             return tela_game_over(score)
 
-        # Desenhar
+        # ── DESENHO ──
         window.blit(img_fundo, (0, 0))
         for linha in range(linha_ini, linha_fim + 1):
             sy = int(linha * TAMANHO_TILE - camera_y)
@@ -453,6 +621,10 @@ def iniciar_jogo() -> str:
                     pygame.draw.ellipse(onda, (180, 220, 255, 90), (xi, TAMANHO_TILE//2 - 3, 18, 6))
                 window.blit(onda, (0, sy))
 
+        # Desenha power-ups
+        for pu in powerups:
+            pu.draw(window, camera_y)
+
         for t in troncos_ativos:
             sy = t.screen_y(camera_y)
             if -TAMANHO_TILE <= sy <= ALTURA:
@@ -462,13 +634,29 @@ def iniciar_jogo() -> str:
             if -ALTURA_CARRO <= sy <= ALTURA:
                 c.draw(window, camera_y)
 
-        window.blit(imagem, (player_screen_x, int(player_screen_y)))
+        # Player com efeito de imunidade (pisca + aura)
+        if imune:
+            aura = pygame.Surface((TAMANHO_TILE + 16, TAMANHO_TILE + 16), pygame.SRCALPHA)
+            pulso = int(120 + 80 * abs((agora % 600) / 300.0 - 1))
+            pygame.draw.circle(aura, (100, 220, 255, pulso),
+                               (TAMANHO_TILE // 2 + 8, TAMANHO_TILE // 2 + 8),
+                               TAMANHO_TILE // 2 + 6)
+            window.blit(aura, (player_screen_x - 8, int(player_screen_y) - 8))
+            # pisca o sprite
+            if (agora // 100) % 2 == 0:
+                window.blit(imagem, (player_screen_x, int(player_screen_y)))
+        else:
+            window.blit(imagem, (player_screen_x, int(player_screen_y)))
 
-        # --- HUD: Score ---
+        # HUD Score
         score_texto  = fonte_score.render(f"Score: {score}", True, (255, 255, 255))
         score_sombra = fonte_score.render(f"Score: {score}", True, (0, 0, 0))
         window.blit(score_sombra, (12, 12))
         window.blit(score_texto,  (10, 10))
+
+        # HUD Power-up
+        if imune:
+            desenhar_hud_powerup(imune_ate - agora)
 
         pygame.display.update()
 
