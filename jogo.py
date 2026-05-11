@@ -25,9 +25,13 @@ carro_rosa     = pygame.image.load(os.path.join(base, "pasta_imagens/rosa.png"))
 carro_azul     = pygame.image.load(os.path.join(base, "pasta_imagens/azul.png"))
 carro_preto    = pygame.image.load(os.path.join(base, "pasta_imagens/preto.png"))
 carro_branco   = pygame.image.load(os.path.join(base, "pasta_imagens/brancop.png"))
+tronco_img_raw = pygame.image.load(os.path.join(base, "pasta_imagens/tronco.png"))
 
 TAMANHO_TILE = 48
 PLAYER_ALVO_Y = ALTURA * 2 // 3 - 100
+
+# Tamanhos de tronco: 2 ou 3 slots (cada slot = 1 TAMANHO_TILE de largura)
+TRONCO_SLOTS_OPCOES = [2, 3]
 
 def escalar_carro(img):
     nova_altura = TAMANHO_TILE
@@ -54,25 +58,26 @@ carros_disp_r = [escalar_carro(c) for c in (
 )]
 carros_disp_l = [pygame.transform.flip(img, True, False) for img in carros_disp_r]
 
-troncos_disp_r = []
-troncos_disp_l = []
-for largura_tronco in [96, 120, 144]:
-    surf = pygame.Surface((largura_tronco, TAMANHO_TILE), pygame.SRCALPHA)
-    pygame.draw.rect(surf, (101, 67, 33), (0, 6, largura_tronco, TAMANHO_TILE - 12), border_radius=10)
-    pygame.draw.rect(surf, (120, 80, 40), (4, 10, largura_tronco - 8, TAMANHO_TILE - 20), border_radius=8)
-    for xi in range(8, largura_tronco - 8, 20):
-        pygame.draw.ellipse(surf, (80, 50, 25), (xi, 14, 12, 8))
-    troncos_disp_r.append(surf)
-    troncos_disp_l.append(pygame.transform.flip(surf, True, False))
+# Gera imagens de tronco para 2 e 3 slots a partir de tronco.png
+def fazer_img_tronco(num_slots: int) -> pygame.Surface:
+    largura = num_slots * TAMANHO_TILE
+    return pygame.transform.scale(tronco_img_raw, (largura, TAMANHO_TILE))
+
+troncos_img = {
+    2: fazer_img_tronco(2),
+    3: fazer_img_tronco(3),
+}
+troncos_img_flip = {
+    k: pygame.transform.flip(v, True, False) for k, v in troncos_img.items()
+}
 
 LARGURA_CARRO = carros_disp_r[0].get_width()
 ALTURA_CARRO = TAMANHO_TILE
 SAFE_ZONE_LINHAS = 1
 
-# Velocidade de scroll automático: começa lenta e acelera com o score
-VEL_SCROLL_INICIAL = 0.25   # px/frame ao começar
-VEL_SCROLL_MAX     = 3.0    # px/frame no limite
-SCORE_PARA_MAX_VEL = 80     # score para atingir velocidade máxima
+VEL_SCROLL_INICIAL = 0.25
+VEL_SCROLL_MAX     = 3.0
+SCORE_PARA_MAX_VEL = 80
 
 fonte = pygame.font.SysFont("arial", 28, bold=True)
 fonte_botao = pygame.font.SysFont("arial", 28, bold=True)
@@ -171,9 +176,11 @@ def obter_lane_data(linha: int, score: int = 0) -> dict:
         if tipo == TIPO_RIO:
             velocidade = random.uniform(2.0, 4.5) * mult
             spawn_gap = random.randint(int(LARGURA * 0.35), int(LARGURA * 0.6))
+            num_slots = random.choice(TRONCO_SLOTS_OPCOES)
         else:
             velocidade = random.uniform(4.5, 9.0) * mult
             spawn_gap = random.randint(int(LARGURA * 0.35), int(LARGURA * 0.65))
+            num_slots = 0
 
         proximo_x = float(-LARGURA_CARRO) if direcao == 1 else float(LARGURA)
         lane_data[linha] = {
@@ -181,6 +188,7 @@ def obter_lane_data(linha: int, score: int = 0) -> dict:
             "velocidade": velocidade,
             "spawn_gap": spawn_gap,
             "proximo_spawn_x": proximo_x,
+            "num_slots": num_slots,
         }
 
     return lane_data[linha]
@@ -219,13 +227,66 @@ class Carro:
             ALTURA_CARRO - m * 2,
         )
 
+
+class Tronco:
+    """Tronco com slots. O jogador ocupa um slot e se move com o tronco."""
+
+    def __init__(self, linha, x, velocidade, direcao, num_slots):
+        self.linha = linha
+        self.x = float(x)
+        self.velocidade = velocidade
+        self.direcao = direcao
+        self.num_slots = num_slots          # 2 ou 3
+        self.largura = num_slots * TAMANHO_TILE
+
+        # Escolhe imagem certa (flipada ou não)
+        if direcao == 1:
+            self.img = troncos_img[num_slots]
+        else:
+            self.img = troncos_img_flip[num_slots]
+
+    def update(self):
+        self.x += self.velocidade * self.direcao
+
+    def fora_da_tela(self):
+        if self.direcao == 1:
+            return self.x > LARGURA + self.largura
+        return self.x < -self.largura * 2
+
+    def screen_y(self, camera_y):
+        return int(self.linha * TAMANHO_TILE - camera_y)
+
+    def draw(self, surface, camera_y):
+        sy = self.screen_y(camera_y)
+        if -self.largura <= sy <= ALTURA:
+            surface.blit(self.img, (int(self.x), sy))
+
+    def rect(self, camera_y):
+        m = 4
+        return pygame.Rect(
+            int(self.x) + m,
+            self.screen_y(camera_y) + m,
+            self.largura - m * 2,
+            TAMANHO_TILE - m * 2,
+        )
+
+    def slot_x_mundo(self, slot: int) -> float:
+        """Retorna a posição X (mundo) do slot. Slot 0 = mais à esquerda do tronco."""
+        return self.x + slot * TAMANHO_TILE
+
+    def slot_do_x(self, wx: float) -> int:
+        """Dado um X no mundo, retorna o índice do slot fisicamente mais próximo."""
+        slot = round((wx - self.x) / TAMANHO_TILE)
+        return max(0, min(self.num_slots - 1, slot))
+
+
 class PowerUp:
     TAMANHO = 36
 
     def __init__(self, wx: float, wy: float, tipo: str):
         self.wx = wx
         self.wy = wy
-        self.tipo = tipo   # "escudo" ou "xp2"
+        self.tipo = tipo
         self.coletado = False
 
     def screen_pos(self, camera_y):
@@ -303,27 +364,25 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
             ld = obter_lane_data(linha, score)
             d = ld["direcao"]
             v = ld["velocidade"]
+            ns = ld["num_slots"]
+            largura_t = ns * TAMANHO_TILE
             ja_existem = [t for t in troncos_ativos if t.linha == linha]
 
             if not ja_existem:
-                img = random.choice(troncos_disp_r if d == 1 else troncos_disp_l)
-                x0 = float(-img.get_width()) if d == 1 else float(LARGURA)
-                troncos_ativos.append(Carro(linha, x0, v, d, img))
+                x0 = float(-largura_t) if d == 1 else float(LARGURA)
+                troncos_ativos.append(Tronco(linha, x0, v, d, ns))
                 ld["proximo_spawn_x"] = x0 + d * ld["spawn_gap"]
             else:
                 ultimo = max(ja_existem, key=lambda c: c.x * d)
 
                 if d == 1 and ultimo.x >= ld["proximo_spawn_x"]:
-                    img = random.choice(troncos_disp_r)
-                    troncos_ativos.append(Carro(linha, float(-img.get_width()), v, d, img))
+                    troncos_ativos.append(Tronco(linha, float(-largura_t), v, d, ns))
                     ld["proximo_spawn_x"] += ld["spawn_gap"]
                 elif d == -1 and ultimo.x <= ld["proximo_spawn_x"]:
-                    img = random.choice(troncos_disp_l)
-                    troncos_ativos.append(Carro(linha, float(LARGURA), v, d, img))
+                    troncos_ativos.append(Tronco(linha, float(LARGURA), v, d, ns))
                     ld["proximo_spawn_x"] -= ld["spawn_gap"]
 
 def gerar_powerups_para_linhas(linha_ini, linha_fim, powerups: list, linhas_com_powerup: set, score: int):
-    """Gera power-ups raros em linhas de grama visíveis."""
     if len([p for p in powerups if not p.coletado]) >= MAX_POWERUPS_ATIVOS:
         return
 
@@ -389,7 +448,6 @@ def desenhar_painel_como_jogar():
     pygame.draw.rect(painel, (255, 200, 50), (0, 0, painel_w, painel_h), 3, border_radius=14)
     window.blit(painel, (painel_x, painel_y))
 
-    # Título
     titulo = fonte_botao.render("COMO JOGAR", True, (255, 210, 50))
     window.blit(titulo, titulo.get_rect(center=(LARGURA // 2, painel_y + 30)))
 
@@ -415,6 +473,7 @@ def desenhar_painel_como_jogar():
         ("OBSTÁCULOS", [
             ("!!", "Desvie dos carros na estrada!"),
             ("~~", "Atravesse rios em cima de troncos!"),
+            ("A/D", "Mude de slot no tronco (cuidado!)"),
             ("XX", "Cair na água = morte!"),
         ]),
         ("POWER-UPS", [
@@ -423,7 +482,6 @@ def desenhar_painel_como_jogar():
         ]),
     ]
 
-    # Espaço disponível para conteúdo (acima do botão Fechar)
     BTN_H      = 42
     BTN_MARGIN = 12
     y_ini  = painel_y + 60
@@ -433,7 +491,6 @@ def desenhar_painel_como_jogar():
     ITEM_H = 20
     SEC_GAP = 7
 
-    # calcula altura total do conteúdo
     total_linhas = sum(HDR_H + len(itens) * ITEM_H for _, itens in secoes)
     total_gaps   = SEC_GAP * (len(secoes) - 1)
     total_h      = total_linhas + total_gaps
@@ -456,7 +513,6 @@ def desenhar_painel_como_jogar():
         if idx < len(secoes) - 1:
             y_cur += SEC_GAP + extra
 
-    # Botão Fechar ancorado no fundo do painel
     btn_fechar = pygame.Rect(LARGURA // 2 - 75, painel_y + painel_h - BTN_H - BTN_MARGIN, 150, BTN_H)
     mouse = pygame.mouse.get_pos()
     desenhar_botao(
@@ -585,7 +641,6 @@ def desenhar_hud_status(bx: int, by: int, icon, restante_ms: int, total_ms: int,
     window.blit(t, t.get_rect(center=(bx + bw // 2, by + bh // 2)))
 
 def desenhar_hud_escudo():
-    """Ícone simples indicando que o escudo está ativo (uso único)."""
     bx = LARGURA - 130 - 10
     by = 10
     bw, bh = 130, 18
@@ -625,9 +680,13 @@ def iniciar_jogo() -> str:
     powerups = []
     linhas_com_powerup = set()
 
-    tem_escudo = False   # escudo de uso único (absorve 1 golpe fatal)
-    graca_ate  = 0       # invencibilidade breve após o escudo quebrar
+    tem_escudo = False
+    graca_ate  = 0
     xp2_ate = 0
+
+    # Estado do tronco atual em que o jogador está
+    tronco_atual: Tronco | None = None
+    slot_atual: int = 0   # índice do slot dentro do tronco
 
     while True:
         clock.tick(30)
@@ -640,6 +699,8 @@ def iniciar_jogo() -> str:
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_w:
+                    # Sai do tronco ao subir
+                    tronco_atual = None
                     player_wy -= TAMANHO_TILE
                     imagem = img_cima
                     camera_ativa = True
@@ -648,29 +709,44 @@ def iniciar_jogo() -> str:
                     else:
                         score += 1
 
-                if event.key == pygame.K_s:
+                elif event.key == pygame.K_s:
+                    # Sai do tronco ao descer
+                    tronco_atual = None
                     player_wy += TAMANHO_TILE
                     imagem = img_baixo
 
-                if event.key == pygame.K_a:
-                    player_wx -= TAMANHO_TILE
+                elif event.key == pygame.K_a:
                     imagem = img_esquerda
+                    if tronco_atual is not None:
+                        # A = move para esquerda = slot de índice menor
+                        novo_slot = slot_atual - 1
+                        if novo_slot < 0:
+                            tronco_atual = None  # caiu na água pela esquerda
+                        else:
+                            slot_atual = novo_slot
+                    else:
+                        player_wx -= TAMANHO_TILE
 
-                if event.key == pygame.K_d:
-                    player_wx += TAMANHO_TILE
+                elif event.key == pygame.K_d:
                     imagem = img_direita
+                    if tronco_atual is not None:
+                        # D = move para direita = slot de índice maior
+                        novo_slot = slot_atual + 1
+                        if novo_slot >= tronco_atual.num_slots:
+                            tronco_atual = None  # caiu na água pela direita
+                        else:
+                            slot_atual = novo_slot
+                    else:
+                        player_wx += TAMANHO_TILE
 
         # ── Câmera com auto-scroll ────────────────────────────────────────
-        # Velocidade de scroll cresce suavemente com o score
         vel_scroll = VEL_SCROLL_INICIAL + (VEL_SCROLL_MAX - VEL_SCROLL_INICIAL) * min(
             score / SCORE_PARA_MAX_VEL, 1.0
         )
 
         if camera_ativa:
-            # Auto-scroll: câmera sobe sozinha no mundo (comprime jogador para baixo)
             camera_y -= vel_scroll
 
-        # Câmera também segue o jogador quando ele avança (não deixa ele sumir pelo topo)
         target_cam = player_wy - PLAYER_ALVO_Y
         if camera_y > target_cam:
             diff = camera_y - target_cam
@@ -678,7 +754,6 @@ def iniciar_jogo() -> str:
             camera_y -= passo
             if camera_y < target_cam:
                 camera_y = target_cam
-        # ─────────────────────────────────────────────────────────────────
 
         player_screen_y = player_wy - camera_y
         player_screen_x = int(player_wx)
@@ -700,8 +775,40 @@ def iniciar_jogo() -> str:
             t.update()
         troncos_ativos[:] = [t for t in troncos_ativos if not t.fora_da_tela()]
 
+        # Se o tronco que o jogador estava saiu da tela, perde referência
+        if tronco_atual is not None and tronco_atual not in troncos_ativos:
+            tronco_atual = None
+
         player_linha_atual = int(player_wy // TAMANHO_TILE)
         _, tipo_atual = gerar_tile(player_linha_atual)
+
+        # ── Lógica de tronco com slots ────────────────────────────────────
+        if tipo_atual == TIPO_RIO:
+            if tronco_atual is not None:
+                # Já está num tronco: move o jogador junto com ele pelo slot
+                player_wx = tronco_atual.slot_x_mundo(slot_atual)
+                player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
+            else:
+                # Entrou na linha do rio agora: tenta embarcar no tronco mais próximo
+                troncos_da_linha = [
+                    t for t in troncos_ativos if t.linha == player_linha_atual
+                ]
+                embarcou = False
+                for t in troncos_da_linha:
+                    # Verifica se o jogador está sobre este tronco (em X)
+                    if t.x <= player_wx < t.x + t.largura:
+                        tronco_atual = t
+                        slot_atual = t.slot_do_x(player_wx)
+                        player_wx = t.slot_x_mundo(slot_atual)
+                        embarcou = True
+                        break
+                # Se não embarcou em nenhum, fica na posição atual (será detectado como morte)
+        else:
+            # Saiu do rio
+            tronco_atual = None
+
+        player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
+        player_screen_x = int(player_wx)
 
         player_rect_mundo = pygame.Rect(
             int(player_wx) + 4, int(player_wy) + 4,
@@ -715,10 +822,8 @@ def iniciar_jogo() -> str:
         for pu in powerups:
             if not pu.coletado and player_rect_mundo.colliderect(pu.rect_mundo()):
                 pu.coletado = True
-
                 if pu.tipo == "escudo":
                     tem_escudo = True
-
                 elif pu.tipo == "xp2":
                     if agora >= xp2_ate:
                         xp2_ate = agora + POWERUP_XP2_DURACAO_MS
@@ -728,39 +833,24 @@ def iniciar_jogo() -> str:
             if not p.coletado and -TAMANHO_TILE <= p.wy - camera_y <= ALTURA + TAMANHO_TILE
         ]
 
-        if tipo_atual == TIPO_RIO:
-            for t in troncos_ativos:
-                if t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect):
-                    player_wx += t.velocidade * t.direcao
-                    break
-
-        player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
-        player_screen_x = int(player_wx)
-        player_rect = pygame.Rect(
-            player_screen_x + 4, int(player_screen_y) + 4,
-            TAMANHO_TILE - 8, TAMANHO_TILE - 8,
-        )
-
-        imune = tem_escudo
-
+        # ── Detecção de morte ─────────────────────────────────────────────
         morreu = False
-        if not tem_escudo and agora >= graca_ate:
+
+        def checa_morte_real():
+            nonlocal morreu
             if tipo_atual == TIPO_ESTRADA:
                 for c in carros_ativos:
                     if c.rect(camera_y).colliderect(player_rect):
                         morreu = True
-                        break
-
+                        return
             elif tipo_atual == TIPO_RIO:
-                em_tronco = any(
-                    t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect)
-                    for t in troncos_ativos
-                )
-                if not em_tronco:
+                # Morre se não está num tronco
+                if tronco_atual is None:
                     morreu = True
 
+        if not tem_escudo and agora >= graca_ate:
+            checa_morte_real()
         elif tem_escudo:
-            # Mesmo com escudo, detecta se haveria morte para consumi-lo
             golpe_fatal = False
             if tipo_atual == TIPO_ESTRADA:
                 for c in carros_ativos:
@@ -768,16 +858,12 @@ def iniciar_jogo() -> str:
                         golpe_fatal = True
                         break
             elif tipo_atual == TIPO_RIO:
-                em_tronco = any(
-                    t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect)
-                    for t in troncos_ativos
-                )
-                if not em_tronco:
+                if tronco_atual is None:
                     golpe_fatal = True
 
             if golpe_fatal:
                 tem_escudo = False
-                graca_ate  = agora + 600  # ~18 frames para sair da zona de perigo
+                graca_ate  = agora + 600
 
         if morreu:
             return tela_game_over(score)
@@ -801,14 +887,22 @@ def iniciar_jogo() -> str:
             pu.draw(window, camera_y)
 
         for t in troncos_ativos:
-            sy = t.screen_y(camera_y)
-            if -TAMANHO_TILE <= sy <= ALTURA:
-                t.draw(window, camera_y)
+            t.draw(window, camera_y)
 
         for c in carros_ativos:
             sy = c.screen_y(camera_y)
             if -ALTURA_CARRO <= sy <= ALTURA:
                 c.draw(window, camera_y)
+
+        # Indicador visual de slots no tronco atual
+        if tronco_atual is not None and tipo_atual == TIPO_RIO:
+            sy_t = tronco_atual.screen_y(camera_y)
+            for s in range(tronco_atual.num_slots):
+                sx_slot = int(tronco_atual.slot_x_mundo(s))
+                cor_slot = (255, 255, 100, 160) if s == slot_atual else (255, 255, 255, 60)
+                indicador = pygame.Surface((TAMANHO_TILE - 8, 4), pygame.SRCALPHA)
+                indicador.fill(cor_slot)
+                window.blit(indicador, (sx_slot + 4, sy_t + TAMANHO_TILE - 6))
 
         if tem_escudo:
             aura = pygame.Surface((TAMANHO_TILE + 16, TAMANHO_TILE + 16), pygame.SRCALPHA)
@@ -822,7 +916,6 @@ def iniciar_jogo() -> str:
             window.blit(aura, (player_screen_x - 8, int(player_screen_y) - 8))
             window.blit(imagem, (player_screen_x, int(player_screen_y)))
         elif agora < graca_ate:
-            # Pisca o personagem enquanto o período de graça está ativo
             if (agora // 80) % 2 == 0:
                 window.blit(imagem, (player_screen_x, int(player_screen_y)))
         else:
@@ -834,7 +927,6 @@ def iniciar_jogo() -> str:
         window.blit(score_sombra, (12, 12))
         window.blit(score_texto, (10, 10))
 
-        # HUD power-ups
         if tem_escudo:
             desenhar_hud_escudo()
 
