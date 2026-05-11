@@ -69,6 +69,11 @@ LARGURA_CARRO = carros_disp_r[0].get_width()
 ALTURA_CARRO = TAMANHO_TILE
 SAFE_ZONE_LINHAS = 1
 
+# Velocidade de scroll automático: começa lenta e acelera com o score
+VEL_SCROLL_INICIAL = 0.25   # px/frame ao começar
+VEL_SCROLL_MAX     = 3.0    # px/frame no limite
+SCORE_PARA_MAX_VEL = 80     # score para atingir velocidade máxima
+
 fonte = pygame.font.SysFont("arial", 28, bold=True)
 fonte_botao = pygame.font.SysFont("arial", 28, bold=True)
 fonte_score = pygame.font.SysFont("arial", 24, bold=True)
@@ -89,7 +94,6 @@ TIPO_RIO = "rio"
 # Power-ups
 # ----------------------------------------------------
 
-POWERUP_ESCUDO_DURACAO_MS = 6_000
 POWERUP_XP2_DURACAO_MS = 8_000
 MAX_POWERUPS_ATIVOS = 1
 
@@ -376,7 +380,7 @@ def desenhar_painel_como_jogar():
     overlay.fill((0, 0, 0, 195))
     window.blit(overlay, (0, 0))
 
-    painel_w, painel_h = 430, 470
+    painel_w, painel_h = 430, 490
     painel_x = (LARGURA - painel_w) // 2
     painel_y = (ALTURA - painel_h) // 2
 
@@ -385,15 +389,14 @@ def desenhar_painel_como_jogar():
     pygame.draw.rect(painel, (255, 200, 50), (0, 0, painel_w, painel_h), 3, border_radius=14)
     window.blit(painel, (painel_x, painel_y))
 
+    # Título
     titulo = fonte_botao.render("COMO JOGAR", True, (255, 210, 50))
-    window.blit(titulo, titulo.get_rect(center=(LARGURA // 2, painel_y + 32)))
+    window.blit(titulo, titulo.get_rect(center=(LARGURA // 2, painel_y + 30)))
 
     pygame.draw.line(
-        window,
-        (255, 200, 50, 180),
-        (painel_x + 20, painel_y + 52),
-        (painel_x + painel_w - 20, painel_y + 52),
-        1
+        window, (255, 200, 50),
+        (painel_x + 20, painel_y + 50),
+        (painel_x + painel_w - 20, painel_y + 50), 1
     )
 
     secoes = [
@@ -403,47 +406,58 @@ def desenhar_painel_como_jogar():
             ("A", "Andar para esquerda"),
             ("D", "Andar para direita"),
         ]),
+        ("CÂMERA", [
+            (">>", "Câmera começa parada no início"),
+            (">>", "Ao mover, ela rola sozinha para cima"),
+            (">>", "Fique pra trás = morte!"),
+            (">>", "Quanto mais pontos, mais rápida!"),
+        ]),
         ("OBSTÁCULOS", [
-            ("🚗", "Desvie dos carros na estrada!"),
-            ("🌊", "Atravesse rios em cima de troncos!"),
-            ("💀", "Cair na água = morte!"),
+            ("!!", "Desvie dos carros na estrada!"),
+            ("~~", "Atravesse rios em cima de troncos!"),
+            ("XX", "Cair na água = morte!"),
         ]),
         ("POWER-UPS", [
-            ("★", "Escudo dourado: imunidade por 6s."),
+            ("★", "Escudo dourado: absorve 1 golpe fatal."),
             ("x2", "Moeda dourada: vale 2 pontos por 8s."),
-            ("",  "Todos os power-ups estão mais raros."),
-        ]),
-        ("DIFICULDADE", [
-            ("📈", "Quanto mais longe, mais rápido!"),
         ]),
     ]
 
-    y_cur = painel_y + 68
-    limite_texto = painel_y + painel_h - 76
+    # Espaço disponível para conteúdo (acima do botão Fechar)
+    BTN_H      = 42
+    BTN_MARGIN = 12
+    y_ini  = painel_y + 60
+    y_max  = painel_y + painel_h - BTN_H - BTN_MARGIN - 8
 
-    for titulo_sec, itens in secoes:
-        if y_cur > limite_texto:
-            break
+    HDR_H  = 21
+    ITEM_H = 20
+    SEC_GAP = 7
 
+    # calcula altura total do conteúdo
+    total_linhas = sum(HDR_H + len(itens) * ITEM_H for _, itens in secoes)
+    total_gaps   = SEC_GAP * (len(secoes) - 1)
+    total_h      = total_linhas + total_gaps
+    espaco       = y_max - y_ini
+    extra        = max(0, (espaco - total_h) // max(1, len(secoes) - 1))
+
+    y_cur = y_ini
+    for idx, (titulo_sec, itens) in enumerate(secoes):
         hdr = fonte_hud.render(titulo_sec, True, (255, 180, 40))
         window.blit(hdr, (painel_x + 18, y_cur))
-        y_cur += 22
+        y_cur += HDR_H
 
         for icone, texto in itens:
-            if y_cur > limite_texto:
-                break
-
-            if icone:
-                ic = fonte_titulo.render(icone, True, (160, 220, 255))
-                window.blit(ic, (painel_x + 22, y_cur))
-
+            ic = fonte_titulo.render(icone, True, (130, 200, 255))
+            window.blit(ic, (painel_x + 22, y_cur))
             tx = fonte_titulo.render(texto, True, (210, 225, 255))
-            window.blit(tx, (painel_x + 50, y_cur))
-            y_cur += 21
+            window.blit(tx, (painel_x + 52, y_cur))
+            y_cur += ITEM_H
 
-        y_cur += 8
+        if idx < len(secoes) - 1:
+            y_cur += SEC_GAP + extra
 
-    btn_fechar = pygame.Rect(LARGURA // 2 - 75, painel_y + painel_h - 52, 150, 42)
+    # Botão Fechar ancorado no fundo do painel
+    btn_fechar = pygame.Rect(LARGURA // 2 - 75, painel_y + painel_h - BTN_H - BTN_MARGIN, 150, BTN_H)
     mouse = pygame.mouse.get_pos()
     desenhar_botao(
         window, btn_fechar, "FECHAR", "ESC",
@@ -477,12 +491,11 @@ def tela_inicial():
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if mostrar_como_jogar:
-                    panel_h = 470
+                    panel_h = 490
                     btn_fechar_rect = pygame.Rect(
                         LARGURA // 2 - 75,
-                        (ALTURA - panel_h) // 2 + panel_h - 52,
-                        150,
-                        42
+                        (ALTURA - panel_h) // 2 + panel_h - 42 - 12,
+                        150, 42
                     )
                     if btn_fechar_rect.collidepoint(mouse):
                         mostrar_como_jogar = False
@@ -571,17 +584,17 @@ def desenhar_hud_status(bx: int, by: int, icon, restante_ms: int, total_ms: int,
     t = fonte_kbd.render(texto, True, (255, 255, 255))
     window.blit(t, t.get_rect(center=(bx + bw // 2, by + bh // 2)))
 
-def desenhar_hud_escudo(restante_ms: int):
-    secs = max(0, restante_ms // 1000 + 1)
-    cor = (80, 220, 255) if restante_ms > 3000 else (255, 160, 30)
-    desenhar_hud_status(
-        LARGURA - 130 - 10, 10,
-        img_powerup_escudo,
-        restante_ms,
-        POWERUP_ESCUDO_DURACAO_MS,
-        f"ESCUDO {secs}s",
-        cor
-    )
+def desenhar_hud_escudo():
+    """Ícone simples indicando que o escudo está ativo (uso único)."""
+    bx = LARGURA - 130 - 10
+    by = 10
+    bw, bh = 130, 18
+    window.blit(img_powerup_escudo, (bx - 40, by - 8))
+    pygame.draw.rect(window, (60, 30, 10), (bx, by, bw, bh), border_radius=5)
+    pygame.draw.rect(window, (255, 210, 50), (bx, by, bw, bh), border_radius=5)
+    pygame.draw.rect(window, (255, 240, 120), (bx, by, bw, bh), 2, border_radius=5)
+    t = fonte_kbd.render("ESCUDO ATIVO", True, (60, 30, 0))
+    window.blit(t, t.get_rect(center=(bx + bw // 2, by + bh // 2)))
 
 def desenhar_hud_xp2(restante_ms: int):
     secs = max(0, restante_ms // 1000 + 1)
@@ -589,10 +602,8 @@ def desenhar_hud_xp2(restante_ms: int):
     desenhar_hud_status(
         LARGURA - 130 - 10, 38,
         img_powerup_xp2,
-        restante_ms,
-        POWERUP_XP2_DURACAO_MS,
-        f"XP x2 {secs}s",
-        cor
+        restante_ms, POWERUP_XP2_DURACAO_MS,
+        f"XP x2 {secs}s", cor
     )
 
 # ----------------------------------------------------
@@ -614,7 +625,8 @@ def iniciar_jogo() -> str:
     powerups = []
     linhas_com_powerup = set()
 
-    imune_ate = 0
+    tem_escudo = False   # escudo de uso único (absorve 1 golpe fatal)
+    graca_ate  = 0       # invencibilidade breve após o escudo quebrar
     xp2_ate = 0
 
     while True:
@@ -648,15 +660,25 @@ def iniciar_jogo() -> str:
                     player_wx += TAMANHO_TILE
                     imagem = img_direita
 
-        target_cam = player_wy - PLAYER_ALVO_Y
+        # ── Câmera com auto-scroll ────────────────────────────────────────
+        # Velocidade de scroll cresce suavemente com o score
+        vel_scroll = VEL_SCROLL_INICIAL + (VEL_SCROLL_MAX - VEL_SCROLL_INICIAL) * min(
+            score / SCORE_PARA_MAX_VEL, 1.0
+        )
 
         if camera_ativa:
-            if target_cam < camera_y:
-                diff = camera_y - target_cam
-                passo = max(1.0, diff * 0.18)
-                camera_y -= passo
-                if camera_y < target_cam:
-                    camera_y = target_cam
+            # Auto-scroll: câmera sobe sozinha no mundo (comprime jogador para baixo)
+            camera_y -= vel_scroll
+
+        # Câmera também segue o jogador quando ele avança (não deixa ele sumir pelo topo)
+        target_cam = player_wy - PLAYER_ALVO_Y
+        if camera_y > target_cam:
+            diff = camera_y - target_cam
+            passo = max(vel_scroll + 1.0, diff * 0.22)
+            camera_y -= passo
+            if camera_y < target_cam:
+                camera_y = target_cam
+        # ─────────────────────────────────────────────────────────────────
 
         player_screen_y = player_wy - camera_y
         player_screen_x = int(player_wx)
@@ -682,16 +704,12 @@ def iniciar_jogo() -> str:
         _, tipo_atual = gerar_tile(player_linha_atual)
 
         player_rect_mundo = pygame.Rect(
-            int(player_wx) + 4,
-            int(player_wy) + 4,
-            TAMANHO_TILE - 8,
-            TAMANHO_TILE - 8,
+            int(player_wx) + 4, int(player_wy) + 4,
+            TAMANHO_TILE - 8, TAMANHO_TILE - 8,
         )
         player_rect = pygame.Rect(
-            player_screen_x + 4,
-            int(player_screen_y) + 4,
-            TAMANHO_TILE - 8,
-            TAMANHO_TILE - 8,
+            player_screen_x + 4, int(player_screen_y) + 4,
+            TAMANHO_TILE - 8, TAMANHO_TILE - 8,
         )
 
         for pu in powerups:
@@ -699,8 +717,7 @@ def iniciar_jogo() -> str:
                 pu.coletado = True
 
                 if pu.tipo == "escudo":
-                    if agora >= imune_ate:
-                        imune_ate = agora + POWERUP_ESCUDO_DURACAO_MS
+                    tem_escudo = True
 
                 elif pu.tipo == "xp2":
                     if agora >= xp2_ate:
@@ -720,16 +737,14 @@ def iniciar_jogo() -> str:
         player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
         player_screen_x = int(player_wx)
         player_rect = pygame.Rect(
-            player_screen_x + 4,
-            int(player_screen_y) + 4,
-            TAMANHO_TILE - 8,
-            TAMANHO_TILE - 8,
+            player_screen_x + 4, int(player_screen_y) + 4,
+            TAMANHO_TILE - 8, TAMANHO_TILE - 8,
         )
 
-        imune = agora < imune_ate
+        imune = tem_escudo
 
         morreu = False
-        if not imune:
+        if not tem_escudo and agora >= graca_ate:
             if tipo_atual == TIPO_ESTRADA:
                 for c in carros_ativos:
                     if c.rect(camera_y).colliderect(player_rect):
@@ -744,9 +759,30 @@ def iniciar_jogo() -> str:
                 if not em_tronco:
                     morreu = True
 
+        elif tem_escudo:
+            # Mesmo com escudo, detecta se haveria morte para consumi-lo
+            golpe_fatal = False
+            if tipo_atual == TIPO_ESTRADA:
+                for c in carros_ativos:
+                    if c.rect(camera_y).colliderect(player_rect):
+                        golpe_fatal = True
+                        break
+            elif tipo_atual == TIPO_RIO:
+                em_tronco = any(
+                    t.linha == player_linha_atual and t.rect(camera_y).colliderect(player_rect)
+                    for t in troncos_ativos
+                )
+                if not em_tronco:
+                    golpe_fatal = True
+
+            if golpe_fatal:
+                tem_escudo = False
+                graca_ate  = agora + 600  # ~18 frames para sair da zona de perigo
+
         if morreu:
             return tela_game_over(score)
 
+        # ── Desenho ──────────────────────────────────────────────────────
         window.blit(img_fundo, (0, 0))
 
         for linha in range(linha_ini, linha_fim + 1):
@@ -774,29 +810,33 @@ def iniciar_jogo() -> str:
             if -ALTURA_CARRO <= sy <= ALTURA:
                 c.draw(window, camera_y)
 
-        if imune:
+        if tem_escudo:
             aura = pygame.Surface((TAMANHO_TILE + 16, TAMANHO_TILE + 16), pygame.SRCALPHA)
             pulso = int(120 + 80 * abs((agora % 600) / 300.0 - 1))
             pygame.draw.circle(
                 aura,
-                (100, 220, 255, pulso),
+                (255, 220, 60, pulso),
                 (TAMANHO_TILE // 2 + 8, TAMANHO_TILE // 2 + 8),
                 TAMANHO_TILE // 2 + 6
             )
             window.blit(aura, (player_screen_x - 8, int(player_screen_y) - 8))
-
-            if (agora // 100) % 2 == 0:
+            window.blit(imagem, (player_screen_x, int(player_screen_y)))
+        elif agora < graca_ate:
+            # Pisca o personagem enquanto o período de graça está ativo
+            if (agora // 80) % 2 == 0:
                 window.blit(imagem, (player_screen_x, int(player_screen_y)))
         else:
             window.blit(imagem, (player_screen_x, int(player_screen_y)))
 
+        # HUD Score
         score_texto = fonte_score.render(f"Score: {score}", True, (255, 255, 255))
         score_sombra = fonte_score.render(f"Score: {score}", True, (0, 0, 0))
         window.blit(score_sombra, (12, 12))
         window.blit(score_texto, (10, 10))
 
-        if imune:
-            desenhar_hud_escudo(imune_ate - agora)
+        # HUD power-ups
+        if tem_escudo:
+            desenhar_hud_escudo()
 
         if agora < xp2_ate:
             desenhar_hud_xp2(xp2_ate - agora)
@@ -809,4 +849,3 @@ if __name__ == "__main__":
         resultado = iniciar_jogo()
         if resultado == "menu":
             tela_inicial()
-            
