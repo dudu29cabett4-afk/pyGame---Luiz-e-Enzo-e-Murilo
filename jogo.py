@@ -120,6 +120,7 @@ def criar_img_powerup_escudo():
     return surf
 
 def criar_img_powerup_xp2():
+    
     size = 36
     surf = pygame.Surface((size, size), pygame.SRCALPHA)
     cx, cy = size // 2, size // 2
