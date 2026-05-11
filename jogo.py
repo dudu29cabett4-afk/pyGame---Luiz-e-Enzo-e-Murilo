@@ -809,3 +809,4 @@ if __name__ == "__main__":
         resultado = iniciar_jogo()
         if resultado == "menu":
             tela_inicial()
+            
