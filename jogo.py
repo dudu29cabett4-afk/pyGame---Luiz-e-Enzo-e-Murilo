@@ -90,11 +90,17 @@ carros_ativos = []
 troncos_ativos = []
 arvores_ativas = []
 vitorias_ativas = []
+linhas_arvore_processadas = set()
 
 TIPO_GRAMA = "grama"
 TIPO_ESTRADA = "estrada"
 TIPO_RIO = "rio"
-
+ARVORE_PREGEN_LINHAS = 10
+ARVORE_APARECIMENTO_MS = 500
+ARVORE_MARGEM_MANUTENCAO = (ARVORE_PREGEN_LINHAS + 4) * TAMANHO_TILE
+ARVORE_CHANCE_BASE = 0.5
+ARVORE_CHANCE_EXTRA_MAX = 0.015
+ARVORE_CHANCE_EXTRA_SCORE = 20000.0
 # ----------------------------------------------------
 # Power-ups
 # ----------------------------------------------------
@@ -143,6 +149,7 @@ def resetar_mundo():
     troncos_ativos.clear()
     arvores_ativas.clear()
     vitorias_ativas.clear()
+    linhas_arvore_processadas.clear()
 
 def gerar_tile(linha: int):
     if linha not in tile_map:
@@ -342,10 +349,11 @@ class PowerUp:
             surface.blit(icon, (sx, sy))
 
 class Arvore:
-    def __init__(self, linha, wx):
+    def __init__(self, linha, wx, nascida_em=0):
         self.linha = linha
         self.wx = float(wx)
         self.wy = float(linha * TAMANHO_TILE)
+        self.nascida_em = nascida_em
 
     def screen_y(self, camera_y):
         return int(self.wy - camera_y)
@@ -358,16 +366,25 @@ class Arvore:
             TAMANHO_TILE - 14
         )
 
-    def draw(self, surface, camera_y):
+    def draw(self, surface, camera_y, agora):
         sy = self.screen_y(camera_y)
         if -TAMANHO_TILE <= sy <= ALTURA:
             sx = int(self.wx)
 
-            pygame.draw.circle(surface, (40, 150, 50), (sx + 24, sy + 16), 16)
-            pygame.draw.circle(surface, (55, 180, 65), (sx + 16, sy + 18), 13)
-            pygame.draw.circle(surface, (35, 120, 40), (sx + 31, sy + 20), 12)
-            pygame.draw.rect(surface, (110, 70, 35), (sx + 19, sy + 22, 10, 22), border_radius=3)
-            pygame.draw.rect(surface, (80, 50, 25), (sx + 19, sy + 22, 10, 22), 2, border_radius=3)
+            surf = pygame.Surface((TAMANHO_TILE, TAMANHO_TILE + 6), pygame.SRCALPHA)
+
+            tempo = max(0, agora - self.nascida_em)
+            alpha = 255
+            if tempo < ARVORE_APARECIMENTO_MS:
+                alpha = int(255 * (tempo / ARVORE_APARECIMENTO_MS))
+
+            pygame.draw.circle(surf, (40, 150, 50), (24, 16), 16)
+            pygame.draw.circle(surf, (55, 180, 65), (16, 18), 13)
+            pygame.draw.circle(surf, (35, 120, 40), (31, 20), 12)
+            pygame.draw.rect(surf, (110, 70, 35), (19, 22, 10, 22), border_radius=3)
+
+            surf.set_alpha(alpha)
+            surface.blit(surf, (sx, sy - 2))
 
 class VitoriaRegia:
     TAMANHO = 28
@@ -482,26 +499,36 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
                     troncos_ativos.append(Tronco(linha, float(LARGURA), v, d, ns))
                     ld["proximo_spawn_x"] -= ld["spawn_gap"]
 
-def gerar_arvores_para_linhas(linha_ini: int, linha_fim: int, score: int = 0):
-    linha_base = int(PLAYER_ALVO_Y // TAMANHO_TILE)
-    safe_inicio = linha_base - SAFE_ZONE_LINHAS
-
+def gerar_arvores_para_linhas(linha_ini, linha_fim, linha_visivel_ini, linha_visivel_fim, score=0, agora=0):
     for linha in range(linha_ini, linha_fim + 1):
-        if linha >= safe_inicio:
+        if linha in linhas_arvore_processadas:
             continue
 
         _, tipo = gerar_tile(linha)
+
+        # Só decide árvore se a linha ainda estiver fora da tela
+        if linha_visivel_ini <= linha <= linha_visivel_fim:
+            continue
+
         if tipo != TIPO_GRAMA:
+            linhas_arvore_processadas.add(linha)
             continue
 
-        if any(a.linha == linha for a in arvores_ativas):
-            continue
+        chance = ARVORE_CHANCE_BASE + min(score / ARVORE_CHANCE_EXTRA_SCORE, ARVORE_CHANCE_EXTRA_MAX)
 
-        chance_arvore = 0.08 + min(score / 12000.0, 0.04)
-        if random.random() < chance_arvore:
-            col = random.randint(1, (LARGURA // TAMANHO_TILE) - 2)
-            wx = float(col * TAMANHO_TILE)
-            arvores_ativas.append(Arvore(linha, wx))
+        if random.random() < chance:
+            qtd = 1 if random.random() < 0.9 else 2
+
+            col_total = LARGURA // TAMANHO_TILE
+            cols = list(range(1, col_total - 1))
+            random.shuffle(cols)
+
+            for col in cols[:qtd]:
+                wx = float(col * TAMANHO_TILE + random.randint(-5, 5))
+                arvores_ativas.append(Arvore(linha, wx, agora))
+
+        # Marca como processada, mesmo que não tenha nascido árvore
+        linhas_arvore_processadas.add(linha)
 
 def gerar_vitorias_regias_para_linhas(linha_ini: int, linha_fim: int, score: int = 0):
     linha_base = int(PLAYER_ALVO_Y // TAMANHO_TILE)
@@ -558,24 +585,33 @@ def gerar_powerups_para_linhas(linha_ini, linha_fim, powerups: list, linhas_com_
         elif roll < chance_escudo + chance_xp2:
             tipo_powerup = "xp2"
 
-        if tipo_powerup is not None:
-            col_total = LARGURA // TAMANHO_TILE
-            colunas_livres = [
-                c for c in range(1, col_total - 1)
-                if not any(
-                    arv.linha == linha and int(arv.wx // TAMANHO_TILE) == c
-                    for arv in arvores_ativas
-                )
-            ]
+        if tipo_powerup is None:
+            continue
 
-            if not colunas_livres:
-                continue
+        col_total = LARGURA // TAMANHO_TILE
 
-            col = random.choice(colunas_livres)
-            wx = float(col * TAMANHO_TILE)
-            wy = float(linha * TAMANHO_TILE + (TAMANHO_TILE - PowerUp.TAMANHO) // 2)
-            powerups.append(PowerUp(wx, wy, tipo_powerup))
-            linhas_com_powerup.add(linha)
+        # colunas ocupadas por árvores nessa linha
+        colunas_ocupadas_por_arvore = {
+            int(arv.wx // TAMANHO_TILE)
+            for arv in arvores_ativas
+            if arv.linha == linha
+        }
+
+        # só aceita colunas livres
+        colunas_livres = [
+            c for c in range(1, col_total - 1)
+            if c not in colunas_ocupadas_por_arvore
+        ]
+
+        if not colunas_livres:
+            continue
+
+        col = random.choice(colunas_livres)
+        wx = float(col * TAMANHO_TILE)
+        wy = float(linha * TAMANHO_TILE + (TAMANHO_TILE - PowerUp.TAMANHO) // 2)
+
+        powerups.append(PowerUp(wx, wy, tipo_powerup))
+        linhas_com_powerup.add(linha)
 
 def colide_com_arvore(rect_mundo):
     return any(arv.rect_mundo().colliderect(rect_mundo) for arv in arvores_ativas)
@@ -948,7 +984,17 @@ def iniciar_jogo() -> str:
         linha_fim = int((camera_y + ALTURA) // TAMANHO_TILE) + 1
 
         tentar_spawnar_carros(linha_ini, linha_fim, score)
-        gerar_arvores_para_linhas(linha_ini, linha_fim, score)
+        linha_visivel_ini = int(camera_y // TAMANHO_TILE)
+        linha_visivel_fim = int((camera_y + ALTURA) // TAMANHO_TILE)
+
+        gerar_arvores_para_linhas(
+        linha_visivel_ini - ARVORE_PREGEN_LINHAS,
+        linha_visivel_fim + ARVORE_PREGEN_LINHAS,
+        linha_visivel_ini,
+        linha_visivel_fim,
+        score,
+        agora
+        )
         gerar_vitorias_regias_para_linhas(linha_ini, linha_fim, score)
         gerar_powerups_para_linhas(linha_ini, linha_fim, powerups, linhas_com_powerup, score)
 
@@ -962,7 +1008,7 @@ def iniciar_jogo() -> str:
 
         arvores_ativas[:] = [
             a for a in arvores_ativas
-            if -TAMANHO_TILE <= a.screen_y(camera_y) <= ALTURA + TAMANHO_TILE
+            if -ARVORE_MARGEM_MANUTENCAO <= a.screen_y(camera_y) <= ALTURA + ARVORE_MARGEM_MANUTENCAO
         ]
 
         vitorias_ativas[:] = [
@@ -1071,7 +1117,7 @@ def iniciar_jogo() -> str:
                 desenhar_agua_rio(window, sy, linha, score)
 
         for arv in arvores_ativas:
-            arv.draw(window, camera_y)
+            arv.draw(window, camera_y, agora)
 
         for v in vitorias_ativas:
             v.draw(window, camera_y)
