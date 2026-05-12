@@ -307,7 +307,7 @@ class PowerUp:
         return int(self.wx), int(self.wy - camera_y)
 
     def rect_mundo(self):
-        m = 4
+        m = 8
         return pygame.Rect(
             int(self.wx) + m,
             int(self.wy) + m,
@@ -352,10 +352,10 @@ class Arvore:
 
     def rect_mundo(self):
         return pygame.Rect(
-            int(self.wx) + 6,
-            int(self.wy) + 2,
-            TAMANHO_TILE - 12,
-            TAMANHO_TILE - 2
+            int(self.wx) + 12,
+            int(self.wy) + 14,
+            TAMANHO_TILE - 24,
+            TAMANHO_TILE - 14
         )
 
     def draw(self, surface, camera_y):
@@ -394,6 +394,34 @@ class VitoriaRegia:
             sx = int(self.wx)
             pygame.draw.rect(surface, (60, 180, 70), (sx, sy, self.TAMANHO, self.TAMANHO), border_radius=5)
             pygame.draw.rect(surface, (25, 110, 35), (sx, sy, self.TAMANHO, self.TAMANHO), 2, border_radius=5)
+
+def desenhar_agua_rio(surface, sy, linha, score=0):
+    ld = obter_lane_data(linha, score)
+    direcao = ld["direcao"]
+
+    agua = pygame.Surface((LARGURA, TAMANHO_TILE), pygame.SRCALPHA)
+    t = pygame.time.get_ticks()
+    desloc = (t // 60) % 30
+
+    if direcao == 1:
+        xs = range(-30 + desloc, LARGURA + 30, 30)
+    else:
+        xs = range(LARGURA + 30 - desloc, -30, -30)
+
+    for i, xi in enumerate(xs):
+        yoff = 5 if i % 2 == 0 else 0
+        pygame.draw.ellipse(
+            agua,
+            (180, 220, 255, 90),
+            (xi, TAMANHO_TILE // 2 - 3 + yoff, 18, 6)
+        )
+        pygame.draw.ellipse(
+            agua,
+            (230, 245, 255, 45),
+            (xi + 6, TAMANHO_TILE // 2 + 2 + yoff, 10, 3)
+        )
+
+    surface.blit(agua, (0, sy))
 
 def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
     linha_base = int(PLAYER_ALVO_Y // TAMANHO_TILE)
@@ -1040,11 +1068,7 @@ def iniciar_jogo() -> str:
             window.blit(surf, (0, sy))
 
             if tipo == TIPO_RIO:
-                onda = pygame.Surface((LARGURA, TAMANHO_TILE), pygame.SRCALPHA)
-                t_off = pygame.time.get_ticks() // 200
-                for xi in range((t_off * 3) % 30 - 30, LARGURA, 30):
-                    pygame.draw.ellipse(onda, (180, 220, 255, 90), (xi, TAMANHO_TILE // 2 - 3, 18, 6))
-                window.blit(onda, (0, sy))
+                desenhar_agua_rio(window, sy, linha, score)
 
         for arv in arvores_ativas:
             arv.draw(window, camera_y)
