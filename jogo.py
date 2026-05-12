@@ -16,7 +16,6 @@ frente         = pygame.image.load(os.path.join(base, "pasta_imagens/frente.png"
 direita        = pygame.image.load(os.path.join(base, "pasta_imagens/direita.png"))
 esquerda       = pygame.image.load(os.path.join(base, "pasta_imagens/esquerda.png"))
 estrada        = pygame.image.load(os.path.join(base, "pasta_imagens/EstradaTeste.png"))
-grama          = pygame.image.load(os.path.join(base, "pasta_imagens/GramaTeste.png"))
 fundo_img      = pygame.image.load(os.path.join(base, "pasta_imagens/fundoGame.png"))
 fundo_fim_img  = pygame.image.load(os.path.join(base, "pasta_imagens/gameover.png"))
 carro_amarelo  = pygame.image.load(os.path.join(base, "pasta_imagens/amarelo.png"))
@@ -26,24 +25,34 @@ carro_azul     = pygame.image.load(os.path.join(base, "pasta_imagens/azul.png"))
 carro_preto    = pygame.image.load(os.path.join(base, "pasta_imagens/preto.png"))
 carro_branco   = pygame.image.load(os.path.join(base, "pasta_imagens/brancop.png"))
 tronco_img_raw = pygame.image.load(os.path.join(base, "pasta_imagens/tronco.png"))
-
+grama_original = pygame.image.load(os.path.join(base, "pasta_imagens/Grama.png")).convert()
 TAMANHO_TILE = 48
 PLAYER_ALVO_Y = ALTURA * 2 // 3 - 100
-
 TRONCO_SLOTS_OPCOES = [2, 3]
+def criar_tile_grama(img, tamanho=TAMANHO_TILE):
+    w, h = img.get_size()
+    lado = min(w, h)
+    x = (w - lado) // 2
+    y = (h - lado) // 2
+    quadrado = img.subsurface(pygame.Rect(x, y, lado, lado)).copy()
+    return pygame.transform.scale(quadrado, (tamanho, tamanho))
+
+img_grama = criar_tile_grama(grama_original)
 
 def escalar_carro(img):
     nova_altura = TAMANHO_TILE
     orig_w, orig_h = img.get_size()
     nova_largura = int(orig_w * (nova_altura / orig_h))
     return pygame.transform.scale(img, (nova_largura, nova_altura))
+def desenhar_grama(surface, y, tile_img):
+    for x in range(0, LARGURA, TAMANHO_TILE):
+        surface.blit(tile_img, (x, y))
 
 img_cima      = pygame.transform.scale(costas,   (TAMANHO_TILE, TAMANHO_TILE))
 img_baixo     = pygame.transform.scale(frente,   (TAMANHO_TILE, TAMANHO_TILE))
 img_esquerda  = pygame.transform.scale(esquerda, (TAMANHO_TILE, TAMANHO_TILE))
 img_direita   = pygame.transform.scale(direita,  (TAMANHO_TILE, TAMANHO_TILE))
 img_estrada   = pygame.transform.scale(estrada,  (LARGURA, TAMANHO_TILE))
-img_grama     = pygame.transform.scale(grama,    (LARGURA, TAMANHO_TILE))
 img_fundo     = pygame.transform.scale(fundo_img, (LARGURA, ALTURA))
 img_fundo_fim = pygame.transform.scale(fundo_fim_img, (LARGURA, ALTURA))
 
@@ -1111,7 +1120,11 @@ def iniciar_jogo() -> str:
         for linha in range(linha_ini, linha_fim + 1):
             sy = int(linha * TAMANHO_TILE - camera_y)
             surf, tipo = gerar_tile(linha)
-            window.blit(surf, (0, sy))
+
+            if tipo == TIPO_GRAMA:
+                desenhar_grama(window, sy, surf)
+            else:
+                window.blit(surf, (0, sy))
 
             if tipo == TIPO_RIO:
                 desenhar_agua_rio(window, sy, linha, score)
