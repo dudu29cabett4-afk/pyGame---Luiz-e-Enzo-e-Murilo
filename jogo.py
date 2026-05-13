@@ -53,6 +53,7 @@ def desenhar_grama(surface, y, tile_img, bioma="grama"):
         "areia": (210, 180, 100),
         "gelo":  (200, 230, 255),
     }
+
     cor = cores.get(bioma)
     if cor:
         pygame.draw.rect(surface, cor, (0, y, LARGURA, TAMANHO_TILE))
@@ -79,6 +80,12 @@ img_rio = pygame.Surface((LARGURA, TAMANHO_TILE))
 img_rio.fill((80, 170, 230))
 for i in range(0, LARGURA, 30):
     pygame.draw.ellipse(img_rio, (130, 200, 255), (i, TAMANHO_TILE // 2 - 4, 20, 8))
+img_rio_gelo = pygame.Surface((LARGURA, TAMANHO_TILE))
+img_rio_gelo.fill((190, 225, 245))
+
+for i in range(0, LARGURA, 26):
+    pygame.draw.line(img_rio_gelo, (235, 250, 255), (i, 8), (i + 12, 20), 2)
+    pygame.draw.line(img_rio_gelo, (160, 205, 230), (i + 4, 24), (i + 18, 12), 1)
 
 carros_disp_r = [escalar_carro(c) for c in (
     carro_amarelo, carro_rosa, carro_vermelho, carro_azul, carro_branco, carro_preto
@@ -120,9 +127,7 @@ def get_bioma_atual(score):
     elif score < 100:
         return "areia"
     else:
-        idx = 2 + ((score - 100) // 50)
-        biomas_extra = ["gelo", "grama", "areia"]
-        return biomas_extra[idx % len(biomas_extra)]
+        return "gelo"
 
 def get_bioma_da_linha(linha_mundo, bioma_thresholds_linha):
     bioma = "grama"
@@ -206,7 +211,7 @@ def gerar_tile(linha: int, bioma: str = "grama"):
         else:
             escolha = random.choices(
                 [TIPO_GRAMA, TIPO_ESTRADA, TIPO_RIO],
-                weights=[3, 4, 4]
+                weights=[4, 3, 2]
             )[0]
 
             if escolha == TIPO_GRAMA:
@@ -220,7 +225,15 @@ def gerar_tile(linha: int, bioma: str = "grama"):
 
 def calcular_multiplicador_velocidade(score: int) -> float:
     return 1.0 + min(score / 1200.0, 0.25)
-
+def rio_congelado(score):
+    return get_bioma_atual(score) == "gelo"
+def get_bioma_atual(score):
+    if score < 50:
+        return "grama"
+    elif score < 100:
+        return "areia"
+    else:
+        return "gelo"
 def linha_tem_rio_vizinho(linha: int) -> bool:
     for d in (-1, 1):
         nl = linha + d
@@ -533,8 +546,10 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
                     ld["proximo_spawn_x"] -= ld["spawn_gap"]
 
         elif tipo == TIPO_RIO:
+            if rio_congelado(score):
+                continue
             ld = obter_lane_data(linha, score)
-
+        
             if ld.get("modo_rio") == "vitoria_regia":
                 continue
 
@@ -588,6 +603,8 @@ def gerar_arvores_para_linhas(linha_ini, linha_fim, linha_visivel_ini, linha_vis
         linhas_arvore_processadas.add(linha)
 
 def gerar_vitorias_regias_para_linhas(linha_ini: int, linha_fim: int, score: int = 0):
+    if rio_congelado(score):
+        return
     linha_base = int(PLAYER_ALVO_Y // TAMANHO_TILE)
     safe_inicio = linha_base - SAFE_ZONE_LINHAS
 
@@ -1085,9 +1102,12 @@ def iniciar_jogo() -> str:
             c.update()
         carros_ativos[:] = [c for c in carros_ativos if not c.fora_da_tela()]
 
-        for t in troncos_ativos:
-            t.update()
-        troncos_ativos[:] = [t for t in troncos_ativos if not t.fora_da_tela()]
+        if not rio_congelado(score):
+            for t in troncos_ativos:
+                t.update()
+            troncos_ativos[:] = [t for t in troncos_ativos if not t.fora_da_tela()]
+        else:
+            troncos_ativos.clear()
 
         arvores_ativas[:] = [
             a for a in arvores_ativas
@@ -1106,22 +1126,25 @@ def iniciar_jogo() -> str:
         _, tipo_atual = gerar_tile(player_linha_atual)
 
         if tipo_atual == TIPO_RIO:
-            ld_atual = obter_lane_data(player_linha_atual, score)
-            em_vitoria_regia_lane = ld_atual.get("modo_rio") == "vitoria_regia"
-
-            if em_vitoria_regia_lane:
+            if rio_congelado(score):
                 tronco_atual = None
-            elif tronco_atual is not None:
-                player_wx = tronco_atual.slot_x_mundo(slot_atual)
-                player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
             else:
-                troncos_da_linha = [t for t in troncos_ativos if t.linha == player_linha_atual]
-                for t in troncos_da_linha:
-                    if t.x <= player_wx < t.x + t.largura:
-                        tronco_atual = t
-                        slot_atual = t.slot_do_x(player_wx)
-                        player_wx = t.slot_x_mundo(slot_atual)
-                        break
+                ld_atual = obter_lane_data(player_linha_atual, score)
+                em_vitoria_regia_lane = ld_atual.get("modo_rio") == "vitoria_regia"
+
+                if em_vitoria_regia_lane:
+                    tronco_atual = None
+                elif tronco_atual is not None:
+                    player_wx = tronco_atual.slot_x_mundo(slot_atual)
+                    player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
+                else:
+                    troncos_da_linha = [t for t in troncos_ativos if t.linha == player_linha_atual]
+                    for t in troncos_da_linha:
+                        if t.x <= player_wx < t.x + t.largura:
+                            tronco_atual = t
+                            slot_atual = t.slot_do_x(player_wx)
+                            player_wx = t.slot_x_mundo(slot_atual)
+                            break
         else:
             tronco_atual = None
 
@@ -1179,13 +1202,14 @@ def iniciar_jogo() -> str:
                         golpe_fatal = True
                         break
             elif tipo_atual == TIPO_RIO:
-                em_vitoria = any(
-                    v.rect_mundo().colliderect(player_rect_mundo)
-                    for v in vitorias_ativas
-                    if v.linha == player_linha_atual
-                )
-                if tronco_atual is None and not em_vitoria:
-                    golpe_fatal = True
+                if not rio_congelado(score):
+                    em_vitoria = any(
+                        v.rect_mundo().colliderect(player_rect_mundo)
+                        for v in vitorias_ativas
+                        if v.linha == player_linha_atual
+                    )
+                    if tronco_atual is None and not em_vitoria:
+                        golpe_fatal = True
 
             if golpe_fatal:
                 tem_escudo = False
@@ -1207,7 +1231,10 @@ def iniciar_jogo() -> str:
                 window.blit(surf, (0, sy))
 
             if tipo == TIPO_RIO:
-                desenhar_agua_rio(window, sy, linha, score)
+                if rio_congelado(score):
+                    window.blit(img_rio_gelo, (0, sy))
+                else:
+                    desenhar_agua_rio(window, sy, linha, score)
 
         for arv in arvores_ativas:
             arv.draw(window, camera_y, agora, get_bioma_da_linha(arv.linha, bioma_thresholds_linha))
