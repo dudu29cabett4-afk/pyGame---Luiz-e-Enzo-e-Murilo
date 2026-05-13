@@ -29,6 +29,7 @@ grama_original = pygame.image.load(os.path.join(base, "pasta_imagens/Grama.png")
 TAMANHO_TILE = 48
 PLAYER_ALVO_Y = ALTURA * 2 // 3 - 100
 TRONCO_SLOTS_OPCOES = [2, 3]
+
 def criar_tile_grama(img, tamanho=TAMANHO_TILE):
     w, h = img.get_size()
     lado = min(w, h)
@@ -44,9 +45,27 @@ def escalar_carro(img):
     orig_w, orig_h = img.get_size()
     nova_largura = int(orig_w * (nova_altura / orig_h))
     return pygame.transform.scale(img, (nova_largura, nova_altura))
-def desenhar_grama(surface, y, tile_img):
-    for x in range(0, LARGURA, TAMANHO_TILE):
-        surface.blit(tile_img, (x, y))
+
+def desenhar_grama(surface, y, tile_img, bioma="grama"):
+    cores = {
+        "grama": None,
+        "areia": (210, 180, 100),
+        "gelo":  (200, 230, 255),
+    }
+    cor = cores.get(bioma)
+    if cor:
+        pygame.draw.rect(surface, cor, (0, y, LARGURA, TAMANHO_TILE))
+        # textura sutil
+        for x in range(0, LARGURA, TAMANHO_TILE):
+            if bioma == "areia":
+                pygame.draw.circle(surface, (190, 160, 80), (x + 12, y + 18), 3)
+                pygame.draw.circle(surface, (190, 160, 80), (x + 36, y + 10), 2)
+            elif bioma == "gelo":
+                pygame.draw.line(surface, (180, 215, 245), (x + 4, y + 8), (x + 20, y + 24), 1)
+                pygame.draw.line(surface, (180, 215, 245), (x + 28, y + 4), (x + 44, y + 20), 1)
+    else:
+        for x in range(0, LARGURA, TAMANHO_TILE):
+            surface.blit(tile_img, (x, y))
 
 img_cima      = pygame.transform.scale(costas,   (TAMANHO_TILE, TAMANHO_TILE))
 img_baixo     = pygame.transform.scale(frente,   (TAMANHO_TILE, TAMANHO_TILE))
@@ -93,6 +112,34 @@ fonte_titulo = pygame.font.SysFont("arial", 19)
 fonte_hud = pygame.font.SysFont("arial", 20, bold=True)
 fonte_kbd = pygame.font.SysFont("arial", 14, bold=True)
 
+BIOMAS = ["grama", "areia", "gelo"]
+BIOMA_THRESHOLDS = [0, 50, 100]
+
+def get_bioma_atual(score):
+    if score < 50:
+        return "grama"
+    elif score < 100:
+        return "areia"
+    else:
+        idx = 2 + ((score - 100) // 50)
+        biomas_extra = ["gelo", "grama", "areia"]
+        return biomas_extra[idx % len(biomas_extra)]
+
+def get_bioma_da_linha(linha_mundo, bioma_thresholds_linha):
+    bioma = "grama"
+    for linha_threshold in sorted(bioma_thresholds_linha.keys(), reverse=True):
+        if linha_mundo <= linha_threshold:
+            bioma = bioma_thresholds_linha[linha_threshold]
+    return bioma
+
+def get_bioma_da_linha(linha_mundo, bioma_thresholds_linha):
+    bioma = "grama"
+    for linha_threshold in sorted(bioma_thresholds_linha.keys()):
+        if linha_mundo <= linha_threshold:
+            bioma = bioma_thresholds_linha[linha_threshold]
+            break
+    return bioma
+
 tile_map = {}
 lane_data = {}
 carros_ativos = []
@@ -110,6 +157,7 @@ ARVORE_MARGEM_MANUTENCAO = (ARVORE_PREGEN_LINHAS + 4) * TAMANHO_TILE
 ARVORE_CHANCE_BASE = 0.5
 ARVORE_CHANCE_EXTRA_MAX = 0.015
 ARVORE_CHANCE_EXTRA_SCORE = 20000.0
+
 # ----------------------------------------------------
 # Power-ups
 # ----------------------------------------------------
@@ -160,25 +208,25 @@ def resetar_mundo():
     vitorias_ativas.clear()
     linhas_arvore_processadas.clear()
 
-def gerar_tile(linha: int):
+def gerar_tile(linha: int, bioma: str = "grama"):
     if linha not in tile_map:
         linha_base = int(PLAYER_ALVO_Y // TAMANHO_TILE)
         safe_inicio = linha_base - SAFE_ZONE_LINHAS
 
         if linha >= safe_inicio:
-            tile_map[linha] = (img_grama, TIPO_GRAMA)
+            tile_map[linha] = (img_grama, TIPO_GRAMA, "grama")
         else:
             escolha = random.choices(
                 [TIPO_GRAMA, TIPO_ESTRADA, TIPO_RIO],
-                weights=[3, 4, 1]
+                weights=[3, 4, 4]
             )[0]
 
             if escolha == TIPO_GRAMA:
-                tile_map[linha] = (img_grama, TIPO_GRAMA)
+                tile_map[linha] = (img_grama, TIPO_GRAMA, bioma)
             elif escolha == TIPO_ESTRADA:
-                tile_map[linha] = (img_estrada, TIPO_ESTRADA)
+                tile_map[linha] = (img_estrada, TIPO_ESTRADA, bioma)
             else:
-                tile_map[linha] = (img_rio, TIPO_RIO)
+                tile_map[linha] = (img_rio, TIPO_RIO, bioma)
 
     return tile_map[linha]
 
@@ -186,9 +234,14 @@ def calcular_multiplicador_velocidade(score: int) -> float:
     return 1.0 + min(score / 1200.0, 0.25)
 
 def linha_tem_rio_vizinho(linha: int) -> bool:
+    # FIX: força a geração do vizinho antes de decidir, evitando o bug de ordering
+    # onde lane_data de N era cacheado antes de N+1 existir no tile_map
     for d in (-1, 1):
         nl = linha + d
-        if nl >= 0 and gerar_tile(nl)[1] == TIPO_RIO:
+        if nl < 0:
+            continue
+        _, tipo_viz = gerar_tile(nl)
+        if tipo_viz == TIPO_RIO:
             return True
     return False
 
@@ -201,7 +254,10 @@ def obter_lane_data(linha: int, score: int = 0) -> dict:
         if tipo == TIPO_RIO:
             tem_rio_vizinho = linha_tem_rio_vizinho(linha)
 
-            if tem_rio_vizinho and random.random() < 0.35:
+            # FIX: removido o `and random.random() < 0.35` que era o principal culpado.
+            # Todo par de rios adjacentes vira vitória régia deterministicamente.
+            # Rios isolados (sem vizinho rio) continuam com troncos.
+            if tem_rio_vizinho:
                 modo_rio = "vitoria_regia"
                 velocidade = 0.0
                 spawn_gap = 0
@@ -375,7 +431,7 @@ class Arvore:
             TAMANHO_TILE - 14
         )
 
-    def draw(self, surface, camera_y, agora):
+    def draw(self, surface, camera_y, agora, bioma="grama"):
         sy = self.screen_y(camera_y)
         if -TAMANHO_TILE <= sy <= ALTURA:
             sx = int(self.wx)
@@ -387,10 +443,24 @@ class Arvore:
             if tempo < ARVORE_APARECIMENTO_MS:
                 alpha = int(255 * (tempo / ARVORE_APARECIMENTO_MS))
 
-            pygame.draw.circle(surf, (40, 150, 50), (24, 16), 16)
-            pygame.draw.circle(surf, (55, 180, 65), (16, 18), 13)
-            pygame.draw.circle(surf, (35, 120, 40), (31, 20), 12)
-            pygame.draw.rect(surf, (110, 70, 35), (19, 22, 10, 22), border_radius=3)
+            if bioma == "areia":
+                # cacto
+                pygame.draw.rect(surf, (60, 140, 60), (20, 8, 8, 30), border_radius=4)
+                pygame.draw.rect(surf, (60, 140, 60), (10, 16, 10, 6), border_radius=3)
+                pygame.draw.rect(surf, (60, 140, 60), (28, 20, 10, 6), border_radius=3)
+                pygame.draw.rect(surf, (110, 70, 35), (21, 34, 6, 10), border_radius=2)
+            elif bioma == "gelo":
+                # pinheiro nevado
+                pygame.draw.polygon(surf, (50, 120, 60), [(24, 6), (8, 32), (40, 32)])
+                pygame.draw.polygon(surf, (200, 230, 255), [(24, 6), (10, 22), (38, 22)], 0)
+                pygame.draw.polygon(surf, (200, 230, 255), [(24, 6), (14, 16), (34, 16)], 0)
+                pygame.draw.rect(surf, (110, 70, 35), (19, 32, 10, 12), border_radius=2)
+            else:
+                # árvore normal
+                pygame.draw.circle(surf, (40, 150, 50), (24, 16), 16)
+                pygame.draw.circle(surf, (55, 180, 65), (16, 18), 13)
+                pygame.draw.circle(surf, (35, 120, 40), (31, 20), 12)
+                pygame.draw.rect(surf, (110, 70, 35), (19, 22, 10, 22), border_radius=3)
 
             surf.set_alpha(alpha)
             surface.blit(surf, (sx, sy - 2))
@@ -457,7 +527,7 @@ def tentar_spawnar_carros(linha_ini: int, linha_fim: int, score: int = 0):
         if linha >= safe_inicio:
             continue
 
-        _, tipo = gerar_tile(linha)
+        _, tipo = gerar_tile(linha, bioma_atual)
 
         if tipo == TIPO_ESTRADA:
             ld = obter_lane_data(linha, score)
@@ -515,7 +585,6 @@ def gerar_arvores_para_linhas(linha_ini, linha_fim, linha_visivel_ini, linha_vis
 
         _, tipo = gerar_tile(linha)
 
-        # Só decide árvore se a linha ainda estiver fora da tela
         if linha_visivel_ini <= linha <= linha_visivel_fim:
             continue
 
@@ -536,12 +605,13 @@ def gerar_arvores_para_linhas(linha_ini, linha_fim, linha_visivel_ini, linha_vis
                 wx = float(col * TAMANHO_TILE + random.randint(-5, 5))
                 arvores_ativas.append(Arvore(linha, wx, agora))
 
-        # Marca como processada, mesmo que não tenha nascido árvore
         linhas_arvore_processadas.add(linha)
 
 def gerar_vitorias_regias_para_linhas(linha_ini: int, linha_fim: int, score: int = 0):
     linha_base = int(PLAYER_ALVO_Y // TAMANHO_TILE)
     safe_inicio = linha_base - SAFE_ZONE_LINHAS
+
+    pares_processados = set()
 
     for linha in range(linha_ini, linha_fim + 1):
         if linha >= safe_inicio:
@@ -555,16 +625,39 @@ def gerar_vitorias_regias_para_linhas(linha_ini: int, linha_fim: int, score: int
         if ld.get("modo_rio") != "vitoria_regia":
             continue
 
-        if "vitorias_cols" not in ld:
-            total_cols = (LARGURA // TAMANHO_TILE)
-            qtd = random.randint(2, 4)
-            ld["vitorias_cols"] = sorted(random.sample(range(1, total_cols - 1), qtd))
+        # encontra o par (linha adjacente que também é vitória-régia)
+        par = None
+        for d in (-1, 1):
+            nl = linha + d
+            if nl < 0:
+                continue
+            _, tipo_viz = gerar_tile(nl)
+            if tipo_viz == TIPO_RIO:
+                ld_viz = obter_lane_data(nl, score)
+                if ld_viz.get("modo_rio") == "vitoria_regia":
+                    par = nl
+                    break
 
-        for col in ld["vitorias_cols"]:
-            wx = float(col * TAMANHO_TILE + (TAMANHO_TILE - VitoriaRegia.TAMANHO) // 2)
+        chave_par = tuple(sorted((linha, par))) if par is not None else (linha,)
+        if chave_par in pares_processados:
+            continue
+        pares_processados.add(chave_par)
 
-            if not any(v.linha == linha and abs(v.wx - wx) < 1 for v in vitorias_ativas):
-                vitorias_ativas.append(VitoriaRegia(linha, wx))
+        # gera colunas compartilhadas para o par inteiro (ou só essa linha)
+        linhas_do_grupo = [linha, par] if par is not None else [linha]
+
+        for ln in linhas_do_grupo:
+            ld_ln = obter_lane_data(ln, score)
+            if "vitorias_cols" not in ld_ln or not ld_ln["vitorias_cols"]:
+                total_cols = LARGURA // TAMANHO_TILE
+                qtd = random.randint(2, 4)
+                cols = sorted(random.sample(range(1, total_cols - 1), qtd))
+                ld_ln["vitorias_cols"] = cols
+
+            for col in ld_ln["vitorias_cols"]:
+                wx = float(col * TAMANHO_TILE + (TAMANHO_TILE - VitoriaRegia.TAMANHO) // 2)
+                if not any(v.linha == ln and abs(v.wx - wx) < 1 for v in vitorias_ativas):
+                    vitorias_ativas.append(VitoriaRegia(ln, wx))
 
 def gerar_powerups_para_linhas(linha_ini, linha_fim, powerups: list, linhas_com_powerup: set, score: int):
     if len([p for p in powerups if not p.coletado]) >= MAX_POWERUPS_ATIVOS:
@@ -599,18 +692,13 @@ def gerar_powerups_para_linhas(linha_ini, linha_fim, powerups: list, linhas_com_
 
         col_total = LARGURA // TAMANHO_TILE
 
-        # colunas ocupadas por árvores nessa linha
-        colunas_ocupadas_por_arvore = {
-            int(arv.wx // TAMANHO_TILE)
-            for arv in arvores_ativas
-            if arv.linha == linha
-        }
-
-        # só aceita colunas livres
-        colunas_livres = [
-            c for c in range(1, col_total - 1)
-            if c not in colunas_ocupadas_por_arvore
-        ]
+        colunas_livres = []
+        for c in range(1, col_total - 1):
+            wx_teste = float(c * TAMANHO_TILE)
+            wy_teste = float(linha * TAMANHO_TILE + (TAMANHO_TILE - PowerUp.TAMANHO) // 2)
+            rect_teste = pygame.Rect(int(wx_teste), int(wy_teste), PowerUp.TAMANHO, PowerUp.TAMANHO)
+            if not any(arv.rect_mundo().colliderect(rect_teste) for arv in arvores_ativas):
+                colunas_livres.append(c)
 
         if not colunas_livres:
             continue
@@ -884,6 +972,8 @@ def iniciar_jogo() -> str:
     imagem = img_baixo
     clock = pygame.time.Clock()
     score = 0
+    bioma_thresholds_linha = {0: "grama"}  # linha_mundo -> bioma que começa ali
+    ultimo_score_bioma = 0
 
     powerups = []
     linhas_com_powerup = set()
@@ -921,6 +1011,12 @@ def iniciar_jogo() -> str:
                             score += 2
                         else:
                             score += 1
+                            novos = [50, 100, 150, 200]  # thresholds
+                            for t in novos:
+                                if ultimo_score_bioma < t <= score:
+                                    linha_atual = int(player_wy // TAMANHO_TILE)
+                                    bioma_thresholds_linha[linha_atual] = get_bioma_atual(score)
+                                    ultimo_score_bioma = score
 
                 elif event.key == pygame.K_s:
                     novo_wy = player_wy + TAMANHO_TILE
@@ -997,16 +1093,15 @@ def iniciar_jogo() -> str:
         linha_visivel_fim = int((camera_y + ALTURA) // TAMANHO_TILE)
 
         gerar_arvores_para_linhas(
-        linha_visivel_ini - ARVORE_PREGEN_LINHAS,
-        linha_visivel_fim + ARVORE_PREGEN_LINHAS,
-        linha_visivel_ini,
-        linha_visivel_fim,
-        score,
-        agora
+            linha_visivel_ini - ARVORE_PREGEN_LINHAS,
+            linha_visivel_fim + ARVORE_PREGEN_LINHAS,
+            linha_visivel_ini,
+            linha_visivel_fim,
+            score,
+            agora
         )
         gerar_vitorias_regias_para_linhas(linha_ini, linha_fim, score)
-        gerar_powerups_para_linhas(linha_ini, linha_fim, powerups, linhas_com_powerup, score)
-
+        gerar_powerups_para_linhas(linha_ini, int(player_wy // TAMANHO_TILE) - 1, powerups, linhas_com_powerup, score)
         for c in carros_ativos:
             c.update()
         carros_ativos[:] = [c for c in carros_ativos if not c.fora_da_tela()]
@@ -1032,7 +1127,13 @@ def iniciar_jogo() -> str:
         _, tipo_atual = gerar_tile(player_linha_atual)
 
         if tipo_atual == TIPO_RIO:
-            if tronco_atual is not None:
+            ld_atual = obter_lane_data(player_linha_atual, score)
+            em_vitoria_regia_lane = ld_atual.get("modo_rio") == "vitoria_regia"
+
+            if em_vitoria_regia_lane:
+                # nessa lane não há troncos — player fica parado na plataforma ou morre na água
+                tronco_atual = None
+            elif tronco_atual is not None:
                 player_wx = tronco_atual.slot_x_mundo(slot_atual)
                 player_wx = max(0.0, min(float(LARGURA - TAMANHO_TILE), player_wx))
             else:
@@ -1122,7 +1223,8 @@ def iniciar_jogo() -> str:
             surf, tipo = gerar_tile(linha)
 
             if tipo == TIPO_GRAMA:
-                desenhar_grama(window, sy, surf)
+                bioma_linha = get_bioma_da_linha(linha, bioma_thresholds_linha)
+                desenhar_grama(window, sy, surf, bioma_linha)
             else:
                 window.blit(surf, (0, sy))
 
@@ -1130,8 +1232,7 @@ def iniciar_jogo() -> str:
                 desenhar_agua_rio(window, sy, linha, score)
 
         for arv in arvores_ativas:
-            arv.draw(window, camera_y, agora)
-
+            arv.draw(window, camera_y, agora, get_bioma_da_linha(arv.linha, bioma_thresholds_linha))
         for v in vitorias_ativas:
             v.draw(window, camera_y)
 
