@@ -126,8 +126,8 @@ def get_bioma_atual(score):
 
 def get_bioma_da_linha(linha_mundo, bioma_thresholds_linha):
     bioma = "grama"
-    for linha_threshold in sorted(bioma_thresholds_linha.keys(), reverse=True):
-        if linha_mundo >= linha_threshold:
+    for linha_threshold in sorted(bioma_thresholds_linha.keys()):
+        if linha_mundo <= linha_threshold:
             bioma = bioma_thresholds_linha[linha_threshold]
             break
     return bioma
