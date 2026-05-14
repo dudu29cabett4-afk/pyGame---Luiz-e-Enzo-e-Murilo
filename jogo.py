@@ -60,9 +60,21 @@ def desenhar_grama(surface, y, tile_img, bioma="grama"):
             if bioma == "areia":
                 pygame.draw.circle(surface, (190, 160, 80), (x + 12, y + 18), 3)
                 pygame.draw.circle(surface, (190, 160, 80), (x + 36, y + 10), 2)
+            # Na função desenhar_grama, substitua o bloco elif bioma == "gelo":
+
             elif bioma == "gelo":
-                pygame.draw.line(surface, (180, 215, 245), (x + 4, y + 8), (x + 20, y + 24), 1)
-                pygame.draw.line(surface, (180, 215, 245), (x + 28, y + 4), (x + 44, y + 20), 1)
+                pygame.draw.rect(surface, (100, 130, 110), (0, y, LARGURA, TAMANHO_TILE))
+                for x in range(0, LARGURA, TAMANHO_TILE):
+                    pygame.draw.ellipse(surface, (210, 230, 220), (x + 3,  y + 5,  18, 8))
+                    pygame.draw.ellipse(surface, (225, 240, 235), (x + 26, y + 14, 14, 6))
+                    pygame.draw.ellipse(surface, (200, 220, 215), (x + 10, y + 28, 20, 7))
+                    # Cristais de gelo pontudos
+                    pygame.draw.polygon(surface, (240, 250, 255), [
+                        (x + 38, y + 4), (x + 41, y + 10), (x + 35, y + 10)
+                    ])
+                    pygame.draw.polygon(surface, (220, 240, 255), [
+                        (x + 8,  y + 20), (x + 11, y + 26), (x + 5,  y + 26)
+                    ])
     else:
         for x in range(0, LARGURA, TAMANHO_TILE):
             surface.blit(tile_img, (x, y))
@@ -84,12 +96,20 @@ img_rio.fill((80, 170, 230))
 for i in range(0, LARGURA, 30):
     pygame.draw.ellipse(img_rio, (130, 200, 255), (i, TAMANHO_TILE // 2 - 4, 20, 8))
 
+# Onde img_rio_gelo é criado, substitua:
 img_rio_gelo = pygame.Surface((LARGURA, TAMANHO_TILE))
-img_rio_gelo.fill((190, 225, 245))
-for i in range(0, LARGURA, 26):
-    pygame.draw.line(img_rio_gelo, (235, 250, 255), (i, 8), (i + 12, 20), 2)
-    pygame.draw.line(img_rio_gelo, (160, 205, 230), (i + 4, 24), (i + 18, 12), 1)
-
+img_rio_gelo.fill((210, 238, 255))          # azul muito claro, quase branco
+# Reflexo central mais brilhante
+pygame.draw.rect(img_rio_gelo, (235, 248, 255), (0, TAMANHO_TILE//2 - 5, LARGURA, 10))
+# Trincas no gelo
+for i in range(0, LARGURA, 40):
+    pygame.draw.line(img_rio_gelo, (170, 210, 235), (i,      6),  (i + 15, 22), 1)
+    pygame.draw.line(img_rio_gelo, (170, 210, 235), (i + 20, 28), (i + 38, 14), 1)
+    pygame.draw.line(img_rio_gelo, (190, 220, 245), (i + 8,  14), (i + 22, 32), 1)
+# Brilhos pontuais (reflexo de sol)
+for i in range(10, LARGURA, 55):
+    pygame.draw.circle(img_rio_gelo, (255, 255, 255), (i, TAMANHO_TILE//2), 3)
+    pygame.draw.circle(img_rio_gelo, (245, 252, 255), (i, TAMANHO_TILE//2), 6, 1)
 carros_disp_r = [escalar_carro(c) for c in (
     carro_amarelo, carro_rosa, carro_vermelho, carro_azul, carro_branco, carro_preto
 )]
@@ -153,6 +173,9 @@ fonte_kbd = pygame.font.SysFont("arial", 14, bold=True)
 
 BIOMAS = ["grama", "areia", "gelo"]
 
+# Depois (colocar):
+CICLO_BIOMA_DURACAO = 50   # pontos por fase após o gelo
+_bioma_cache = {}          # score_bucket -> bioma
 
 def get_bioma_atual(score):
     if score < 50:
@@ -160,7 +183,14 @@ def get_bioma_atual(score):
     elif score < 100:
         return "areia"
     else:
-        return "gelo"
+        # A cada CICLO_BIOMA_DURACAO pontos, sorteia um novo bioma
+        bucket = (score - 100) // CICLO_BIOMA_DURACAO
+        if bucket not in _bioma_cache:
+            # Evita repetir o bioma anterior duas vezes seguidas
+            anterior = _bioma_cache.get(bucket - 1, "gelo")
+            opcoes = [b for b in BIOMAS if b != anterior]
+            _bioma_cache[bucket] = random.choice(opcoes)
+        return _bioma_cache[bucket]
 
 
 def rio_congelado(score):
@@ -237,6 +267,7 @@ def resetar_mundo():
     vitorias_ativas.clear()
     linhas_arvore_processadas.clear()
     bioma_por_linha.clear()
+    _bioma_cache.clear()
 
 
 def fixar_bioma_linha(linha: int, score: int) -> str:
