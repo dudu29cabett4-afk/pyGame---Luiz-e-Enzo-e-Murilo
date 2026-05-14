@@ -54,26 +54,24 @@ def desenhar_grama(surface, y, tile_img, bioma="grama"):
         "gelo": (200, 230, 255),
     }
     cor = cores.get(bioma)
+
     if cor:
         pygame.draw.rect(surface, cor, (0, y, LARGURA, TAMANHO_TILE))
         for x in range(0, LARGURA, TAMANHO_TILE):
             if bioma == "areia":
                 pygame.draw.circle(surface, (190, 160, 80), (x + 12, y + 18), 3)
                 pygame.draw.circle(surface, (190, 160, 80), (x + 36, y + 10), 2)
-            # Na função desenhar_grama, substitua o bloco elif bioma == "gelo":
-
             elif bioma == "gelo":
                 pygame.draw.rect(surface, (100, 130, 110), (0, y, LARGURA, TAMANHO_TILE))
                 for x in range(0, LARGURA, TAMANHO_TILE):
-                    pygame.draw.ellipse(surface, (210, 230, 220), (x + 3,  y + 5,  18, 8))
+                    pygame.draw.ellipse(surface, (210, 230, 220), (x + 3, y + 5, 18, 8))
                     pygame.draw.ellipse(surface, (225, 240, 235), (x + 26, y + 14, 14, 6))
                     pygame.draw.ellipse(surface, (200, 220, 215), (x + 10, y + 28, 20, 7))
-                    # Cristais de gelo pontudos
                     pygame.draw.polygon(surface, (240, 250, 255), [
                         (x + 38, y + 4), (x + 41, y + 10), (x + 35, y + 10)
                     ])
                     pygame.draw.polygon(surface, (220, 240, 255), [
-                        (x + 8,  y + 20), (x + 11, y + 26), (x + 5,  y + 26)
+                        (x + 8, y + 20), (x + 11, y + 26), (x + 5, y + 26)
                     ])
     else:
         for x in range(0, LARGURA, TAMANHO_TILE):
@@ -82,10 +80,10 @@ def desenhar_grama(surface, y, tile_img, bioma="grama"):
 
 img_cima      = pygame.transform.scale(costas,   (TAMANHO_TILE, TAMANHO_TILE))
 img_baixo     = pygame.transform.scale(frente,   (TAMANHO_TILE, TAMANHO_TILE))
-img_esquerda  = pygame.transform.scale(esquerda, (TAMANHO_TILE, TAMANHO_TILE))
-img_direita   = pygame.transform.scale(direita,  (TAMANHO_TILE, TAMANHO_TILE))
-img_estrada   = pygame.transform.scale(estrada,  (LARGURA, TAMANHO_TILE))
-img_fundo     = pygame.transform.scale(fundo_img, (LARGURA, ALTURA))
+img_esquerda  = pygame.transform.scale(esquerda,  (TAMANHO_TILE, TAMANHO_TILE))
+img_direita   = pygame.transform.scale(direita,   (TAMANHO_TILE, TAMANHO_TILE))
+img_estrada   = pygame.transform.scale(estrada,    (LARGURA, TAMANHO_TILE))
+img_fundo     = pygame.transform.scale(fundo_img,  (LARGURA, ALTURA))
 img_fundo_fim = pygame.transform.scale(fundo_fim_img, (LARGURA, ALTURA))
 
 grama_original = pygame.image.load(os.path.join(base, "pasta_imagens/Grama.png")).convert()
@@ -96,28 +94,27 @@ img_rio.fill((80, 170, 230))
 for i in range(0, LARGURA, 30):
     pygame.draw.ellipse(img_rio, (130, 200, 255), (i, TAMANHO_TILE // 2 - 4, 20, 8))
 
-# Onde img_rio_gelo é criado, substitua:
 img_rio_gelo = pygame.Surface((LARGURA, TAMANHO_TILE))
-img_rio_gelo.fill((210, 238, 255))          # azul muito claro, quase branco
-# Reflexo central mais brilhante
-pygame.draw.rect(img_rio_gelo, (235, 248, 255), (0, TAMANHO_TILE//2 - 5, LARGURA, 10))
-# Trincas no gelo
+img_rio_gelo.fill((210, 238, 255))
+pygame.draw.rect(img_rio_gelo, (235, 248, 255), (0, TAMANHO_TILE // 2 - 5, LARGURA, 10))
 for i in range(0, LARGURA, 40):
-    pygame.draw.line(img_rio_gelo, (170, 210, 235), (i,      6),  (i + 15, 22), 1)
+    pygame.draw.line(img_rio_gelo, (170, 210, 235), (i, 6), (i + 15, 22), 1)
     pygame.draw.line(img_rio_gelo, (170, 210, 235), (i + 20, 28), (i + 38, 14), 1)
-    pygame.draw.line(img_rio_gelo, (190, 220, 245), (i + 8,  14), (i + 22, 32), 1)
-# Brilhos pontuais (reflexo de sol)
+    pygame.draw.line(img_rio_gelo, (190, 220, 245), (i + 8, 14), (i + 22, 32), 1)
 for i in range(10, LARGURA, 55):
-    pygame.draw.circle(img_rio_gelo, (255, 255, 255), (i, TAMANHO_TILE//2), 3)
-    pygame.draw.circle(img_rio_gelo, (245, 252, 255), (i, TAMANHO_TILE//2), 6, 1)
+    pygame.draw.circle(img_rio_gelo, (255, 255, 255), (i, TAMANHO_TILE // 2), 3)
+    pygame.draw.circle(img_rio_gelo, (245, 252, 255), (i, TAMANHO_TILE // 2), 6, 1)
+
 carros_disp_r = [escalar_carro(c) for c in (
     carro_amarelo, carro_rosa, carro_vermelho, carro_azul, carro_branco, carro_preto
 )]
 carros_disp_l = [pygame.transform.flip(img, True, False) for img in carros_disp_r]
 
+
 def fazer_img_tronco(num_slots: int) -> pygame.Surface:
     largura = num_slots * TAMANHO_TILE
     return pygame.transform.scale(tronco_img_raw, (largura, TAMANHO_TILE))
+
 
 troncos_img = {
     2: fazer_img_tronco(2),
@@ -126,6 +123,7 @@ troncos_img = {
 troncos_img_flip = {
     k: pygame.transform.flip(v, True, False) for k, v in troncos_img.items()
 }
+
 
 def fazer_img_crocodilo(num_slots: int) -> pygame.Surface:
     w = num_slots * TAMANHO_TILE
@@ -153,6 +151,7 @@ def fazer_img_crocodilo(num_slots: int) -> pygame.Surface:
     pygame.draw.polygon(surf, (55, 130, 55), [(0, h // 4 + 4), (0, h // 4 + h // 2 - 4), (10, h // 2)])
     return surf
 
+
 crocodilos_img = {k: fazer_img_crocodilo(k) for k in TRONCO_SLOTS_OPCOES}
 crocodilos_img_flip = {k: pygame.transform.flip(v, True, False) for k, v in crocodilos_img.items()}
 
@@ -161,7 +160,7 @@ ALTURA_CARRO = TAMANHO_TILE
 SAFE_ZONE_LINHAS = 1
 
 VEL_SCROLL_INICIAL = 0.25
-VEL_SCROLL_MAX     = 3.0
+VEL_SCROLL_MAX = 3.0
 SCORE_PARA_MAX_VEL = 80
 
 fonte = pygame.font.SysFont("arial", 28, bold=True)
@@ -173,9 +172,9 @@ fonte_kbd = pygame.font.SysFont("arial", 14, bold=True)
 
 BIOMAS = ["grama", "areia", "gelo"]
 
-# Depois (colocar):
-CICLO_BIOMA_DURACAO = 50   # pontos por fase após o gelo
-_bioma_cache = {}          # score_bucket -> bioma
+CICLO_BIOMA_DURACAO = 50
+_bioma_cache = {}
+
 
 def get_bioma_atual(score):
     if score < 50:
@@ -183,10 +182,8 @@ def get_bioma_atual(score):
     elif score < 100:
         return "areia"
     else:
-        # A cada CICLO_BIOMA_DURACAO pontos, sorteia um novo bioma
         bucket = (score - 100) // CICLO_BIOMA_DURACAO
         if bucket not in _bioma_cache:
-            # Evita repetir o bioma anterior duas vezes seguidas
             anterior = _bioma_cache.get(bucket - 1, "gelo")
             opcoes = [b for b in BIOMAS if b != anterior]
             _bioma_cache[bucket] = random.choice(opcoes)
@@ -203,6 +200,7 @@ carros_ativos = []
 troncos_ativos = []
 arvores_ativas = []
 vitorias_ativas = []
+fumacas_ativas = []
 linhas_arvore_processadas = set()
 bioma_por_linha = {}
 
@@ -265,6 +263,7 @@ def resetar_mundo():
     troncos_ativos.clear()
     arvores_ativas.clear()
     vitorias_ativas.clear()
+    fumacas_ativas.clear()
     linhas_arvore_processadas.clear()
     bioma_por_linha.clear()
     _bioma_cache.clear()
@@ -485,6 +484,60 @@ class PowerUp:
             )
             surface.blit(glow, (sx - 8, sy - 8))
             surface.blit(icon, (sx, sy))
+
+
+class Fumaca:
+    def __init__(self, wx, wy, vx, vy, nascida_em):
+        self.wx = wx
+        self.wy = wy
+        self.vx = vx
+        self.vy = vy
+        self.nascida_em = nascida_em
+        self.duracao = random.randint(450, 700)
+        self.raio = random.randint(4, 6)
+
+    def expirou(self, agora):
+        return agora - self.nascida_em > self.duracao
+
+    def draw(self, surface, camera_y, agora):
+        idade = agora - self.nascida_em
+        if idade < 0 or idade > self.duracao:
+            return
+
+        frac = idade / self.duracao
+        wx = self.wx + self.vx * idade
+        wy = self.wy + self.vy * idade
+
+        sx = int(wx)
+        sy = int(wy - camera_y)
+
+        if sy < -30 or sy > ALTURA + 30:
+            return
+
+        raio = int(self.raio + frac * 5)
+        alpha = int(140 * (1.0 - frac))
+
+        surf = pygame.Surface((raio * 4, raio * 4), pygame.SRCALPHA)
+        pygame.draw.circle(surf, (210, 210, 210, alpha), (raio * 2, raio * 2), raio)
+        pygame.draw.circle(surf, (240, 240, 240, max(0, alpha - 40)), (raio * 2 - 2, raio * 2 - 2), max(1, raio - 1))
+        surface.blit(surf, (sx - raio * 2, sy - raio * 2))
+
+
+def spawn_fumaca_carro(carro, agora):
+    if random.random() > 0.35:
+        return
+
+    if carro.direcao == 1:
+        wx = carro.x + 4
+        vx = random.uniform(-0.020, -0.010)
+    else:
+        wx = carro.x + carro.largura - 4
+        vx = random.uniform(0.010, 0.020)
+
+    wy = carro.linha * TAMANHO_TILE + TAMANHO_TILE - 8 + random.randint(-2, 2)
+    vy = random.uniform(-0.030, -0.018)
+
+    fumacas_ativas.append(Fumaca(wx, wy, vx, vy, agora))
 
 
 class Arvore:
@@ -730,7 +783,7 @@ def gerar_vitorias_regias_para_linhas(linha_ini: int, linha_fim: int, score: int
 
         if par is not None:
             ld_par = obter_lane_data(par, score)
-            cols_compartilhadas = ld.get("vitorias_cols") or ld_par.get("vitorias_cols")
+            cols_compartilhadas = ld["vitorias_cols"] or ld_par["vitorias_cols"]
             if not cols_compartilhadas:
                 total_cols = LARGURA // TAMANHO_TILE
                 qtd = random.randint(2, 4)
@@ -873,20 +926,20 @@ def desenhar_painel_como_jogar():
         ]),
     ]
 
-    BTN_H      = 42
+    BTN_H = 42
     BTN_MARGIN = 12
-    y_ini  = painel_y + 60
-    y_max  = painel_y + painel_h - BTN_H - BTN_MARGIN - 8
+    y_ini = painel_y + 60
+    y_max = painel_y + painel_h - BTN_H - BTN_MARGIN - 8
 
-    HDR_H  = 21
+    HDR_H = 21
     ITEM_H = 20
     SEC_GAP = 7
 
     total_linhas = sum(HDR_H + len(itens) * ITEM_H for _, itens in secoes)
-    total_gaps   = SEC_GAP * (len(secoes) - 1)
-    total_h      = total_linhas + total_gaps
-    espaco       = y_max - y_ini
-    extra        = max(0, (espaco - total_h) // max(1, len(secoes) - 1))
+    total_gaps = SEC_GAP * (len(secoes) - 1)
+    total_h = total_linhas + total_gaps
+    espaco = y_max - y_ini
+    extra = max(0, (espaco - total_h) // max(1, len(secoes) - 1))
 
     y_cur = y_ini
     for idx, (titulo_sec, itens) in enumerate(secoes):
@@ -1192,7 +1245,10 @@ def iniciar_jogo() -> str:
 
         for c in carros_ativos:
             c.update()
+            spawn_fumaca_carro(c, agora)
+
         carros_ativos[:] = [c for c in carros_ativos if not c.fora_da_tela()]
+        fumacas_ativas[:] = [f for f in fumacas_ativas if not f.expirou(agora)]
 
         if not rio_congelado(score):
             for t in troncos_ativos:
@@ -1337,6 +1393,9 @@ def iniciar_jogo() -> str:
 
         for pu in powerups:
             pu.draw(window, camera_y)
+
+        for f in fumacas_ativas:
+            f.draw(window, camera_y, agora)
 
         for t in troncos_ativos:
             t.draw(window, camera_y)
