@@ -1127,6 +1127,9 @@ def iniciar_jogo() -> str:
 
     tronco_atual = None
     slot_atual = 0
+    # Linha mais "acima" (menor índice) que o jogador já pisou.
+    # Pontos só são dados quando o jogador bate novo recorde.
+    linha_recorde = player_linha
 
     while True:
         clock.tick(30)
@@ -1150,10 +1153,13 @@ def iniciar_jogo() -> str:
                         player_wy = novo_wy
                         imagem = img_cima
                         camera_ativa = True
-                        if agora < xp2_ate:
-                            score += 2
-                        else:
-                            score += 1
+                        nova_linha = int(player_wy // TAMANHO_TILE)
+                        if nova_linha < linha_recorde:
+                            linha_recorde = nova_linha
+                            if agora < xp2_ate:
+                                score += 2
+                            else:
+                                score += 1
 
                 elif event.key == pygame.K_s:
                     novo_wy = player_wy + TAMANHO_TILE
